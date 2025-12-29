@@ -1,0 +1,8 @@
+{
+  "network": "monadTestnet",
+  "deployer": "0xBF98e5FEf825CcD68dcFF3cF0a766faB413D6207",
+  "rewardTracker": "0x5B870DAa512DB9DADEbD53d55045BAE798B4B86B",
+  "mmm": "0x1Ad3565c099F5242012Fb1f21aaA729EFcf75c16",
+  "txHash": "0x4fd16caa8998dab1544ede1b31a5269c2a470bded0e48a6e0162718271a60662",
+  "deployedAt": "2025-12-27T00:25:41.138Z"
+}

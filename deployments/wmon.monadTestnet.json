@@ -1,0 +1,7 @@
+{
+  "network": "monadTestnet",
+  "deployer": "0xBF98e5FEf825CcD68dcFF3cF0a766faB413D6207",
+  "wmon": "0x51C0bb68b65bd84De6518C939CB9Dbe2d6Fa7079",
+  "txHash": "0x143b63bf23f4b8d17080fae55c4544c01717445dbfd7692d4ad12fbe66b2a07d",
+  "deployedAt": "2025-12-26T01:31:20.604Z"
+}

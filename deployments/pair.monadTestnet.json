@@ -1,0 +1,13 @@
+{
+  "network": "monadTestnet",
+  "mmm": "0x1Ad3565c099F5242012Fb1f21aaA729EFcf75c16",
+  "wmon": "0x51C0bb68b65bd84De6518C939CB9Dbe2d6Fa7079",
+  "factory": "0x8e8a713Be23d9be017d7A5f4D649982B5dD24615",
+  "routerPatched": "0x2532faDDa5d1B9F73da7ADb7571A71e797884ed2",
+  "pair": "0x7d4A5Ed4C366aFa71c5b4158b2F203B1112AC7FD",
+  "mmmLiquidity": "1000000000000000000000000",
+  "monLiquidityWei": "50000000000000000",
+  "addLiquidityTx": "0x7fd3a5d8f6e89b0087f53d9a1a77d20b3fc4372775c45b7e922d167aff0ea57d",
+  "setPairTx": "0xb3cdf3cd6c4b22a0479b20a07d682200b5bed6db71d0796068e1f7dc3fa351ce",
+  "deployedAt": "2025-12-27T00:25:03.536Z"
+}

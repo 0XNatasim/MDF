@@ -1,0 +1,8 @@
+{
+  "network": "monadTestnet",
+  "deployer": "0xBF98e5FEf825CcD68dcFF3cF0a766faB413D6207",
+  "factory": "0x8e8a713Be23d9be017d7A5f4D649982B5dD24615",
+  "feeToSetter": "0xBF98e5FEf825CcD68dcFF3cF0a766faB413D6207",
+  "txHash": "0x988a00e8fcae35bccad05baa0543d55c8941adc9351c557b081349ec6ff844c2",
+  "deployedAt": "2025-12-26T01:39:19.254Z"
+}

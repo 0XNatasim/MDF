@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MMM Token Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Ethers.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="min-h-screen p-4 md:p-8">
+  <div class="max-w-6xl mx-auto space-y-8">
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-coins text-white"></i>
+          </div>
+          <h1 class="text-3xl md:text-4xl font-bold gradient-text">
+            MMM Token Dashboard
+          </h1>
+        </div>
+        <p class="text-slate-400 mt-2 text-sm md:text-base">
+          MMM Token Contract: 
+          <a href="https://testnet.monadexplorer.com/address/0x08e3e7677DdBf2B4C7b45407e665E7726d4823dc" 
+             target="_blank" 
+             class="font-mono text-indigo-300 hover:text-indigo-200 underline decoration-dotted">
+            0x08e3e7...82dc
+          </a>
+        </p>
+      </div>
+
+      <div class="flex flex-col md:items-end gap-3">
+        <!-- Wallet Info -->
+        <div id="walletInfo" class="hidden text-right">
+          <div class="flex items-center justify-end gap-2 mb-1">
+            <i class="fa-solid fa-wallet text-slate-400 text-sm"></i>
+            <span class="text-sm text-slate-300 font-medium" id="connectedAddress"></span>
+          </div>
+          <div class="flex items-center justify-end gap-2">
+            <i class="fa-solid fa-coins text-emerald-400 text-sm"></i>
+            <span class="text-sm text-emerald-300 font-medium" id="walletMonBalance">0.00</span>
+            <span class="text-xs text-emerald-400">MON</span>
+          </div>
+        </div>
+        
+        <!-- Connect Button -->
+        <div class="flex flex-col items-stretch md:items-end gap-2">
+          <button id="connectButton"
+                  class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl
+                         bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 
+                         text-white font-semibold shadow-lg transition-all duration-200 
+                         hover:shadow-xl active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-wallet"></i>
+            <span>Connect Wallet</span>
+          </button>
+          <div class="flex items-center gap-2 text-xs" id="networkLabel">
+            <div class="w-2 h-2 rounded-full bg-red-500"></div>
+            <span class="text-slate-400">Not connected</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top stats -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="card p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+            Total MMM Holdings
+          </span>
+          <span class="text-xs px-2 py-1 bg-slate-800/50 rounded-lg">
+            All Tracked Wallets
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl md:text-4xl font-bold" id="totalMMM">0.00</span>
+          <span class="text-xl font-semibold text-indigo-300">MMM</span>
+        </div>
+        <div class="mt-4">
+          <button id="sendMmmButton" 
+                  class="text-sm px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 
+                        rounded-lg border border-indigo-700/50 transition-colors w-full 
+                        disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-paper-plane mr-2"></i>
+            Send MMM Tokens
+          </button>
+        </div>
+      </div>
+
+      <div class="card p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+            Total MON Claimable
+          </span>
+          <span class="text-xs px-2 py-1 bg-emerald-900/30 rounded-lg text-emerald-300">
+            Ready to claim
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl md:text-4xl font-bold" id="totalClaimable">0.00</span>
+          <span class="text-xl font-semibold text-emerald-300">MON</span>
+        </div>
+        <div class="mt-4">
+          <button id="claimAllButton" class="text-sm px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 
+                        rounded-lg border border-emerald-700/50 transition-colors w-full disabled:opacity-50 disabled:cursor-not-allowed">
+            Claim All Rewards
+          </button>
+        </div>
+      </div>
+
+      <div class="card p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs uppercase tracking-wide text-slate-400 font-semibold">
+            Total MON Claimed
+          </span>
+          <span class="text-xs px-2 py-1 bg-slate-800/50 rounded-lg">
+            Tracked Locally
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl md:text-4xl font-bold" id="totalClaimed">0.00</span>
+          <span class="text-xl font-semibold text-amber-300">MON</span>
+        </div>
+        <div class="mt-4 text-sm text-slate-400">
+          <i class="fa-solid fa-database mr-2 text-amber-400"></i>
+          <span>Via this dashboard</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Your Wallets Section -->
+    <section class="card p-5 md:p-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 class="text-xl font-bold">Your Wallets</h2>
+          <p class="text-slate-400 text-sm mt-1">Manage connected wallet balances</p>
+        </div>
+        <div class="flex gap-3">
+          <button id="refreshButton" 
+                  class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 
+                        rounded-lg border border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-rotate"></i>
+            <span>Refresh</span>
+          </button>
+          <button id="addWalletButton"
+                  class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600/30 hover:bg-indigo-600/40 
+                        rounded-lg border border-indigo-700 text-indigo-300 transition-colors">
+            <i class="fa-solid fa-plus"></i>
+            <span>Add Wallet</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Wallet List -->
+      <div id="walletList" class="space-y-4">
+        <div class="text-center py-8 text-slate-500" id="noWalletsMessage">
+          <i class="fa-solid fa-wallet text-4xl mb-3"></i>
+          <p>No wallets connected. Click "Connect Wallet" to get started.</p>
+        </div>
+      </div>
+
+      <!-- Source Info -->
+      <div class="mt-6 pt-6 border-t border-slate-800/50">
+        <div class="flex flex-col md:flex-row md:items-center gap-4 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">Source:</span>
+            <span class="font-medium">Wallet</span>
+          </div>
+          <div class="md:ml-auto">
+            <select id="walletSelector" class="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 
+                          focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+              <option>Select a wallet</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Notification Area -->
+    <div id="notification" class="notification hidden"></div>
+  </div>
+
+  <!-- Load configuration -->
+  <script src="config.js"></script>
+  
+  <!-- Load main app -->
+  <script src="app.js"></script>
+</body>
+</html>
