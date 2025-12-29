@@ -201,7 +201,10 @@ body {
   gap: 12px;
   margin: 10px 0 18px;
 }
+
 .stats--4 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stats--3 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
 
 .stat {
   background: rgba(255,255,255,0.05);
@@ -229,24 +232,7 @@ body {
 
 .card { padding: 18px; }
 
-/* Main layout */
-.layout {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-  padding-bottom: 36px;
-}
-
-.left { display: flex; flex-direction: column; gap: 14px; }
-.right { display: flex; flex-direction: column; gap: 14px; }
-
-.ops {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: 1fr;
-}
-
-/* Panel */
+/* Panels */
 .panel { padding: 18px; background: var(--panel-2); }
 .panel__head h3 { margin: 0; font-size: 15px; font-weight: 700; }
 .panel__head p { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
@@ -259,6 +245,13 @@ body {
 }
 
 .panel__actions { display: flex; gap: 8px; }
+
+/* Ops (swap/send) */
+.ops {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
 
 /* Connected / watched cards */
 .wallet-card {
@@ -449,7 +442,7 @@ body {
   margin-top: 12px;
 }
 
-/* Slider (kept as-is per your request) */
+/* Slider */
 .watched-slider {
   position: relative;
   overflow: hidden;
@@ -560,26 +553,66 @@ body {
 
 .loading__text { color: rgba(255,255,255,0.86); font-weight: 700; }
 
-/* Responsive */
-@media (min-width: 980px) {
-  .layout { grid-template-columns: 1.45fr 0.55fr; align-items: start; }
-  .ops { grid-template-columns: 1fr 1fr; }
-  .stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* =========================
+   NEW DASH GRID (replaces old .layout usage)
+   Row 1: meta full width
+   Right rail: slider (sticky) + watched wallets under
+========================= */
+
+.dash-grid{
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+  padding-bottom: 36px;
 }
 
+.dash-left{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* remove the default .stats vertical margins inside dash-left */
+.dash-left .stats { margin: 0; }
+
+.dash-right{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: start;
+}
+
+/* Desktop */
+@media (min-width: 980px) {
+  .dash-grid{
+    grid-template-columns: 1fr 0.55fr;
+    align-items: start;
+  }
+
+  .ops { grid-template-columns: 1fr 1fr; }
+  .stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* slider sits higher and stays visible */
+  #watchedSlider.watched-slider{
+    position: sticky;
+    top: 86px; /* adjust if needed */
+  }
+}
+
+/* Mobile / tablets */
 @media (max-width: 980px) {
   .chips { grid-template-columns: repeat(2, 1fr); }
   .btn-row { grid-template-columns: 1fr; }
   .table { min-width: 420px; }
-}
 
-.stats--2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-/* On mobile, make it 1 column */
-@media (max-width: 768px) {
-  .stats--2 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
+  #watchedSlider.watched-slider{
+    position: static;
   }
+}
+
+/* Pool reserves row: 2 cols desktop, 1 col small */
+@media (max-width: 768px) {
+  .stats--2 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
 }

@@ -1,3 +1,4 @@
+<!-- index.html (REPLACEMENT) — reorganized exactly as you specified -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,7 +43,7 @@
   </header>
 
   <main class="container">
-    <!-- Meta row -->
+    <!-- ROW 1 (FULL WIDTH): MMM / Tracker / Pool / Price / Refresh -->
     <section class="meta">
       <div class="meta-row">
         <span class="meta-item">
@@ -54,12 +55,11 @@
           Tracker:
           <a id="trackerLink" class="link" target="_blank" rel="noreferrer"></a>
         </span>
-        
+
         <span class="meta-item">
           Pool:
           <a id="poolLink" class="link" target="_blank" rel="noreferrer"></a>
         </span>
-
 
         <span class="meta-item">
           Price (MMM/MON):
@@ -73,66 +73,56 @@
       </div>
     </section>
 
-<!-- KPI Panel (4 in one row on PC) -->
-<section class="stats stats--4">
-  <div class="stat">
-    <div class="stat__label">Taxes Collected (MMM)</div>
-    <div id="kpiTaxes" class="stat__value">—</div>
-    <div class="stat__meta">MMM held by MMM token contract</div>
-  </div>
+    <!-- GRID: left rows 2–4, right slider spans rows 2–4; watched wallets starts UNDER slider -->
+    <section class="dash-grid">
+      <!-- LEFT: rows 2–4 -->
+      <div class="dash-left">
+        <!-- ROW 2 (LEFT): Taxes / Tracker / Network (3 cards) -->
+        <section class="stats stats--3">
+          <div class="stat">
+            <div class="stat__label">Taxes Collected (MMM)</div>
+            <div id="kpiTaxes" class="stat__value">—</div>
+            <div class="stat__meta">MMM held by MMM token contract</div>
+          </div>
 
-  <div class="stat">
-    <div class="stat__label">Tracker Balance (MON)</div>
-    <div id="kpiTrackerMon" class="stat__value">—</div>
-    <div class="stat__meta">Native MON held by tracker</div>
-  </div>
-<!--
-  <div class="stat">
-    <div class="stat__label">MMM/WMON Quote</div>
-    <div id="kpiPriceCard" class="stat__value">
-      <span id="kpiPriceCardText">See above</span>
-    </div>
-    <div class="stat__meta">Derived from pool reserves</div>
-  </div>
--->
-  <div class="stat">
-    <div class="stat__label">Network</div>
-    <div class="stat__value">Monad Testnet</div>
-    <div class="stat__meta">ChainId 10143</div>
-  </div>
-</section>
-         
+          <div class="stat">
+            <div class="stat__label">Tracker Balance (MON)</div>
+            <div id="kpiTrackerMon" class="stat__value">—</div>
+            <div class="stat__meta">Native MON held by tracker</div>
+          </div>
 
-<!-- NEW: Pool Reserves Section -->
-<section class="stats stats--2" style="margin-top: 20px;">
-  <div class="stat">
-    <div class="stat__label">Pool Reserves: MMM</div>
-    <div id="poolMmmReserves" class="stat__value">—</div>
-    <div class="stat__meta">
-      <span id="poolMmmValue">—</span>
-      <br>
-      <span id="poolMmmPct">—</span> of pool
-    </div>
-  </div>
+          <div class="stat">
+            <div class="stat__label">Network</div>
+            <div class="stat__value">Monad Testnet</div>
+            <div class="stat__meta">ChainId 10143</div>
+          </div>
+        </section>
 
-  <div class="stat">
-    <div class="stat__label">Pool Reserves: WMON</div>
-    <div id="poolWmonReserves" class="stat__value">—</div>
-    <div class="stat__meta">
-      <span id="poolWmonValue">—</span>
-      <br>
-      <span id="poolWmonPct">—</span> of pool
-    </div>
-  </div>
-</section>
-    <!-- Layout: Left main (connected + ops) / Right watched -->
-    <section class="layout">
-      <!-- LEFT -->
-      <div class="left">
-        <!-- Connected wallet card -->
+        <!-- ROW 3 (LEFT): Pool reserves MMM + WMON -->
+        <section class="stats stats--2">
+          <div class="stat">
+            <div class="stat__label">Pool Reserves: MMM</div>
+            <div id="poolMmmReserves" class="stat__value">—</div>
+            <div class="stat__meta">
+              <span id="poolMmmValue">—</span><br>
+              <span id="poolMmmPct">—</span> of pool
+            </div>
+          </div>
+
+          <div class="stat">
+            <div class="stat__label">Pool Reserves: WMON</div>
+            <div id="poolWmonReserves" class="stat__value">—</div>
+            <div class="stat__meta">
+              <span id="poolWmonValue">—</span><br>
+              <span id="poolWmonPct">—</span> of pool
+            </div>
+          </div>
+        </section>
+
+        <!-- Connected wallet card (kept) -->
         <div id="connectedCard" class="card"></div>
 
-        <!-- Operations row: Swap (left) + Send (right) -->
+        <!-- ROW 4 (LEFT): Swap + Send -->
         <div class="ops">
           <!-- Swap panel -->
           <div class="panel">
@@ -213,7 +203,7 @@
           </div>
         </div>
 
-        <!-- Recent actions -->
+        <!-- Recent actions (LEFT, below ops) -->
         <section class="section">
           <div class="section__head">
             <h2>Recent Actions (local log)</h2>
@@ -246,9 +236,9 @@
         </section>
       </div>
 
-      <!-- RIGHT -->
-      <aside class="right">
-        <!-- Slider (PNG) -->
+      <!-- RIGHT: slider (starts at row2, ends at row4), watched wallets below -->
+      <aside class="dash-right">
+        <!-- NFT Slider (higher) -->
         <div id="watchedSlider" class="watched-slider card">
           <img class="watched-slide is-active" src="./MMM1.png" alt="MMM 1"/>
           <img class="watched-slide" src="./MMM2.png" alt="MMM 2"/>
@@ -259,7 +249,7 @@
           </div>
         </div>
 
-        <!-- Watched wallets -->
+        <!-- Watched wallets (UNDER slider) -->
         <div class="panel">
           <div class="panel__head panel__head--row">
             <div>
