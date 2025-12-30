@@ -101,7 +101,7 @@ let routerWrite = null;
 let wallets = [];
 let actions = [];
 
-let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, decimals: 18 };
+let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, monBalance: 0, decimals: 18 };
 let protocolSnapshot  = { taxesMMM: 0, trackerMon: 0, mmmPerMon: null, lastRefresh: null };
 let mmmTaxRates = { buyTaxBps: 500, sellTaxBps: 500 }; // Default 5%, will be updated from contract
 
@@ -451,15 +451,20 @@ async function refreshAll() {
 
     // Connected snapshot
     if (connectedAddress) {
-      const bal = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
-      const claim = await getClaimable(connectedAddress).catch(() => 0n);
+      const [bal, claim, monBal] = await Promise.all([
+        tokenRead.balanceOf(connectedAddress).catch(() => 0n),
+        getClaimable(connectedAddress).catch(() => 0n),
+        readProvider.getBalance(connectedAddress).catch(() => 0n)
+      ]);
       connectedSnapshot.address = connectedAddress;
       connectedSnapshot.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
       connectedSnapshot.claimable = Number(ethers.formatUnits(claim, decimals));
+      connectedSnapshot.monBalance = Number(ethers.formatEther(monBal));
     } else {
       connectedSnapshot.address = null;
       connectedSnapshot.mmmHoldings = 0;
       connectedSnapshot.claimable = 0;
+      connectedSnapshot.monBalance = 0;
     }
 
     protocolSnapshot.lastRefresh = new Date();
@@ -558,6 +563,11 @@ function renderConnectedCard() {
     </div>
 
     <div class="wallet-metrics">
+      <div class="metric">
+        <span class="k">MON Balance (connected)</span>
+        <span class="v">${addr ? formatMon(connectedSnapshot.monBalance) : "—"}</span>
+      </div>
+
       <div class="metric">
         <span class="k">MMM Balance (connected)</span>
         <span class="v">${addr ? formatMMM(connectedSnapshot.mmmHoldings) : "—"}</span>
@@ -825,6 +835,7 @@ function disconnectWallet(silent = false) {
   connectedSnapshot.address = null;
   connectedSnapshot.mmmHoldings = 0;
   connectedSnapshot.claimable = 0;
+  connectedSnapshot.monBalance = 0;
 
   setHeaderConnectionUI(false);
   renderSendDropdown();
@@ -1111,20 +1122,37 @@ async function executeSwap() {
 
     // Validate balance before swap
     if (side === "buy") {
-      const balance = await browserProvider.getBalance(connectedAddress).catch(() => 0n);
       const amountInWei = ethers.parseEther(String(amountIn));
-      if (balance < amountInWei) {
-        return err("Insufficient MON balance for this swap.");
+      // Use cached balance, but refresh if needed
+      let balance = ethers.parseEther(String(connectedSnapshot.monBalance || 0));
+      
+      // If balance seems stale or zero, refresh it
+      if (balance === 0n && browserProvider) {
+        balance = await browserProvider.getBalance(connectedAddress).catch(() => 0n);
+        connectedSnapshot.monBalance = Number(ethers.formatEther(balance));
       }
+      
+      // Reserve some MON for gas (estimate ~0.001 MON for gas)
+      const gasReserve = ethers.parseEther("0.001");
+      const requiredTotal = amountInWei + gasReserve;
+      
+      if (balance < requiredTotal) {
+        const available = Number(ethers.formatEther(balance));
+        const needed = amountIn + 0.001;
+        return err(`Insufficient MON balance. Available: ${fmt(available, 6)} MON, Needed: ${fmt(needed, 6)} MON (including gas)`);
+      }
+      
       // Warn for very small amounts that might have rounding issues
       if (amountIn < 0.01) {
         console.warn("Very small swap amount - may have rounding issues. Consider using a larger amount or higher slippage.");
       }
     } else {
-      const balance = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
       const amountInWei = ethers.parseUnits(String(amountIn), decimals);
+      // Use cached balance
+      const balance = ethers.parseUnits(String(connectedSnapshot.mmmHoldings || 0), decimals);
+      
       if (balance < amountInWei) {
-        return err("Insufficient MMM balance for this swap.");
+        return err(`Insufficient MMM balance. Available: ${formatMMM(connectedSnapshot.mmmHoldings)}, Needed: ${formatMMM(amountIn)}`);
       }
     }
 
