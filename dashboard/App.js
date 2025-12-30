@@ -292,6 +292,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("swapSide")?.addEventListener("change", updateSwapQuoteAndButtons);
   $("swapAmountIn")?.addEventListener("input", updateSwapQuoteAndButtons);
   $("swapSlippage")?.addEventListener("change", updateSwapQuoteAndButtons);
+  $("swapSlippageAuto")?.addEventListener("change", () => {
+    const autoCheckbox = $("swapSlippageAuto");
+    const slippageSelect = $("swapSlippage");
+    if (slippageSelect) {
+      slippageSelect.disabled = autoCheckbox?.checked || false;
+    }
+    updateSwapQuoteAndButtons();
+  });
   $("swapApproveBtn")?.addEventListener("click", approveMMMMax);
   $("swapExecBtn")?.addEventListener("click", executeSwap);
 
@@ -301,6 +309,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderWallets();
   renderActions();
   updateKPIs();
+  
+  // Initialize slippage auto checkbox state
+  const autoCheckbox = $("swapSlippageAuto");
+  const slippageSelect = $("swapSlippage");
+  if (autoCheckbox && slippageSelect) {
+    slippageSelect.disabled = autoCheckbox.checked || false;
+  }
+  
   await updateSwapQuoteAndButtons();
 
   await refreshAll();
@@ -1002,7 +1018,27 @@ async function sendTokens() {
 /* =========================
    Swap helpers / execution
 ========================= */
-function getSlippageBps() {
+function getSlippageBps(amountIn = null) {
+  const autoCheckbox = $("swapSlippageAuto");
+  const isAuto = autoCheckbox?.checked || false;
+  
+  if (isAuto && amountIn !== null) {
+    // Automatic slippage calculation based on amount
+    // Smaller amounts need more slippage tolerance
+    if (amountIn < 0.001) {
+      return 500; // 5% for very small amounts
+    } else if (amountIn < 0.01) {
+      return 300; // 3% for small amounts
+    } else if (amountIn < 0.1) {
+      return 200; // 2% for medium amounts
+    } else if (amountIn < 1) {
+      return 150; // 1.5% for larger amounts
+    } else {
+      return 100; // 1% for very large amounts
+    }
+  }
+  
+  // Manual slippage from dropdown
   const v = parseFloat(($("swapSlippage")?.value || "1"));
   const bps = Math.floor((Number.isFinite(v) ? v : 1) * 100);
   // Cap at 99% (9900 bps) to ensure amountOutMin is always > 0
@@ -1033,7 +1069,27 @@ async function updateSwapQuoteAndButtons() {
   if (execBtn) execBtn.disabled = true;
 
   if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
+    // Hide auto slippage display if no amount
+    const slippageDisplay = $("swapSlippageDisplay");
+    if (slippageDisplay) slippageDisplay.style.display = "none";
     return;
+  }
+
+  // Show/hide auto slippage display
+  const autoCheckbox = $("swapSlippageAuto");
+  const slippageDisplay = $("swapSlippageDisplay");
+  const slippageValue = $("swapSlippageValue");
+  const isAuto = autoCheckbox?.checked || false;
+  
+  if (slippageDisplay) {
+    slippageDisplay.style.display = isAuto ? "flex" : "none";
+  }
+  
+  // Calculate and display auto slippage
+  if (isAuto && slippageValue) {
+    const autoSlippageBps = getSlippageBps(amountIn);
+    const autoSlippagePercent = (autoSlippageBps / 100).toFixed(2);
+    slippageValue.textContent = `${autoSlippagePercent}%`;
   }
 
   try {
@@ -1113,7 +1169,7 @@ async function executeSwap() {
     const side = $("swapSide")?.value || "buy";
     const amountInStr = $("swapAmountIn")?.value?.trim() || "";
     const amountIn = parseFloat(amountInStr);
-    const slippageBps = getSlippageBps();
+    const slippageBps = getSlippageBps(amountIn);
 
     if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
       return err("Enter a valid amount.");

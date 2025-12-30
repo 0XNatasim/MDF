@@ -141,7 +141,13 @@
               <label class="label">Amount in</label>
               <input id="swapAmountIn" class="input" type="number" step="0.000001" placeholder="0.00"/>
 
-              <label class="label">Slippage</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label class="label" style="flex: 1;">Slippage</label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                  <input type="checkbox" id="swapSlippageAuto" style="cursor: pointer;"/>
+                  <span>Auto</span>
+                </label>
+              </div>
               <select id="swapSlippage" class="input">
                 <option value="0.5">0.5%</option>
                 <option value="1" selected>1%</option>
@@ -157,6 +163,10 @@
               <div class="quote-row">
                 <span class="muted">Quote:</span>
                 <span id="swapQuoteOut" class="mono">—</span>
+              </div>
+              <div id="swapSlippageDisplay" class="quote-row" style="display: none;">
+                <span class="muted">Auto Slippage:</span>
+                <span id="swapSlippageValue" class="mono">—</span>
               </div>
 
               <div class="btn-row">
