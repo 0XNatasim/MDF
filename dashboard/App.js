@@ -51,6 +51,11 @@ const ERC20_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
 ];
 
+const MMM_ABI = [
+  ...ERC20_ABI,
+  "function getTaxInfo() view returns (uint256 buyTaxBps, uint256 sellTaxBps, uint256 taxTokens)",
+];
+
 const ROUTER_ABI = [
   "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable",
   "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)",
@@ -98,6 +103,7 @@ let actions = [];
 
 let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, decimals: 18 };
 let protocolSnapshot  = { taxesMMM: 0, trackerMon: 0, mmmPerMon: null, lastRefresh: null };
+let mmmTaxRates = { buyTaxBps: 500, sellTaxBps: 500 }; // Default 5%, will be updated from contract
 
 // Router-resolved WMON/WETH
 let EFFECTIVE_WMON = null;
@@ -240,9 +246,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   );
 
   tokenRead   = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
+  const mmmRead = new ethers.Contract(CONFIG.mmmToken, MMM_ABI, readProvider);
   trackerRead = new ethers.Contract(CONFIG.tracker,  TRACKER_ABI, readProvider);
   routerRead  = new ethers.Contract(CONFIG.router,   ROUTER_ABI, readProvider);
   factoryRead = new ethers.Contract(CONFIG.factory,  FACTORY_ABI, readProvider);
+  
+  // Load tax rates (will be refreshed in refreshAll)
+  await refreshTaxRates();
 
   // Resolve effective WMON/WETH from router
   try {
@@ -392,6 +402,22 @@ async function quoteMmmPerMon(mmmDecimals) {
 }
 
 /* =========================
+   Refresh tax rates
+========================= */
+async function refreshTaxRates(mmmContract) {
+  try {
+    if (!mmmContract) {
+      mmmContract = new ethers.Contract(CONFIG.mmmToken, MMM_ABI, readProvider);
+    }
+    const taxInfo = await mmmContract.getTaxInfo();
+    mmmTaxRates.buyTaxBps = Number(taxInfo[0]);
+    mmmTaxRates.sellTaxBps = Number(taxInfo[1]);
+  } catch (e) {
+    console.warn("Could not read tax rates, using defaults:", e);
+  }
+}
+
+/* =========================
    Refresh / On-chain reads
 ========================= */
 async function refreshAll() {
@@ -400,6 +426,9 @@ async function refreshAll() {
 
     const decimals = await tokenRead.decimals().catch(() => 18);
     connectedSnapshot.decimals = decimals;
+
+    // Refresh tax rates
+    await refreshTaxRates();
 
     // Taxes in MMM contract address
     const taxesRaw = await tokenRead.balanceOf(CONFIG.mmmToken).catch(() => 0n);
@@ -717,21 +746,25 @@ function renderActions() {
 ========================= */
 async function connectWallet(silent) {
   try {
-    if (!window.ethereum) return err("No injected wallet found (MetaMask/Backpack).");
+    // Note: Some wallet extensions (like evmAsk) may show "Cannot redefine property: ethereum" 
+    // This is harmless - it's the extension trying to inject/redefine window.ethereum
+    // We cache it here to avoid issues if it gets redefined
+    const ethereum = window.ethereum;
+    if (!ethereum) return err("No injected wallet found (MetaMask/Backpack).");
     showLoading("Connecting wallet...");
 
-    browserProvider = new ethers.BrowserProvider(window.ethereum);
+    browserProvider = new ethers.BrowserProvider(ethereum);
 
     const net = await browserProvider.getNetwork();
     if (Number(net.chainId) !== CONFIG.chainIdDec) {
       try {
-        await window.ethereum.request({
+        await ethereum.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: CONFIG.chainIdHex }]
         });
       } catch (e) {
         if (e?.code === 4902) {
-          await window.ethereum.request({
+          await ethereum.request({
             method: "wallet_addEthereumChain",
             params: [{
               chainId: CONFIG.chainIdHex,
@@ -762,7 +795,7 @@ async function connectWallet(silent) {
     await refreshAll();
     hideLoading();
 
-    window.ethereum.on?.("accountsChanged", async (accounts) => {
+    ethereum.on?.("accountsChanged", async (accounts) => {
       if (!accounts?.length) { disconnectWallet(true); return; }
       connectedAddress = ethers.getAddress(accounts[0]);
       signer = await browserProvider.getSigner();
@@ -775,7 +808,7 @@ async function connectWallet(silent) {
       await refreshAll();
     });
 
-    window.ethereum.on?.("chainChanged", () => location.reload());
+    ethereum.on?.("chainChanged", () => location.reload());
   } catch (e) {
     hideLoading();
     if (!silent) err(`Connect failed: ${e?.message || e}`);
@@ -996,20 +1029,28 @@ async function updateSwapQuoteAndButtons() {
 
     if (side === "buy") {
       // Buy: MON (WMON) → MMM
+      // Note: MMM has buy tax, so actual received will be less than quoted
       amountInWei = ethers.parseEther(String(amountIn));
       tokenIn = EFFECTIVE_WMON;
       tokenOut = CONFIG.mmmToken;
       quoteOut = await quoteOutFromReserves(amountInWei, tokenIn, tokenOut);
-      const quoteFormatted = ethers.formatUnits(quoteOut, decimals);
-      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MMM`;
+      // Apply buy tax: user receives (100 - buyTaxBps) / 100 of quoted amount
+      const buyTaxMultiplier = BigInt(10000 - mmmTaxRates.buyTaxBps);
+      const adjustedQuote = (quoteOut * buyTaxMultiplier) / 10000n;
+      const quoteFormatted = ethers.formatUnits(adjustedQuote, decimals);
+      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MMM (after ${mmmTaxRates.buyTaxBps/100}% tax)`;
     } else {
       // Sell: MMM → MON (WMON)
+      // Note: MMM has sell tax, so only (100 - sellTaxBps) / 100 actually goes into swap
       amountInWei = ethers.parseUnits(String(amountIn), decimals);
       tokenIn = CONFIG.mmmToken;
       tokenOut = EFFECTIVE_WMON;
-      quoteOut = await quoteOutFromReserves(amountInWei, tokenIn, tokenOut);
+      // Calculate effective amount after sell tax
+      const sellTaxMultiplier = BigInt(10000 - mmmTaxRates.sellTaxBps);
+      const effectiveAmountIn = (amountInWei * sellTaxMultiplier) / 10000n;
+      quoteOut = await quoteOutFromReserves(effectiveAmountIn, tokenIn, tokenOut);
       const quoteFormatted = ethers.formatEther(quoteOut);
-      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MON`;
+      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MON (after ${mmmTaxRates.sellTaxBps/100}% tax)`;
     }
 
     // Enable buttons if wallet is connected
@@ -1068,6 +1109,21 @@ async function executeSwap() {
     const decimals = connectedSnapshot.decimals || 18;
     const deadline = deadlineTs();
 
+    // Validate balance before swap
+    if (side === "buy") {
+      const balance = await browserProvider.getBalance(connectedAddress).catch(() => 0n);
+      const amountInWei = ethers.parseEther(String(amountIn));
+      if (balance < amountInWei) {
+        return err("Insufficient MON balance for this swap.");
+      }
+    } else {
+      const balance = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
+      const amountInWei = ethers.parseUnits(String(amountIn), decimals);
+      if (balance < amountInWei) {
+        return err("Insufficient MMM balance for this swap.");
+      }
+    }
+
     showLoading("Executing swap...");
 
     let tx;
@@ -1076,7 +1132,11 @@ async function executeSwap() {
       const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
       const amountInWei = ethers.parseEther(String(amountIn));
       const quoteOut = await quoteOutFromReserves(amountInWei, EFFECTIVE_WMON, CONFIG.mmmToken);
-      const amountOutMin = (quoteOut * BigInt(10000 - slippageBps)) / 10000n;
+      // Apply buy tax: user receives less due to tax
+      const buyTaxMultiplier = BigInt(10000 - mmmTaxRates.buyTaxBps);
+      const adjustedQuote = (quoteOut * buyTaxMultiplier) / 10000n;
+      // Apply slippage to the tax-adjusted quote
+      const amountOutMin = (adjustedQuote * BigInt(10000 - slippageBps)) / 10000n;
 
       tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
         amountOutMin,
@@ -1089,7 +1149,11 @@ async function executeSwap() {
       // Sell: MMM → MON
       const path = [CONFIG.mmmToken, EFFECTIVE_WMON];
       const amountInWei = ethers.parseUnits(String(amountIn), decimals);
-      const quoteOut = await quoteOutFromReserves(amountInWei, CONFIG.mmmToken, EFFECTIVE_WMON);
+      // Account for sell tax: only part of amountIn actually goes into swap
+      const sellTaxMultiplier = BigInt(10000 - mmmTaxRates.sellTaxBps);
+      const effectiveAmountIn = (amountInWei * sellTaxMultiplier) / 10000n;
+      const quoteOut = await quoteOutFromReserves(effectiveAmountIn, CONFIG.mmmToken, EFFECTIVE_WMON);
+      // Apply slippage
       const amountOutMin = (quoteOut * BigInt(10000 - slippageBps)) / 10000n;
 
       tx = await routerWrite.swapExactTokensForETHSupportingFeeOnTransferTokens(
@@ -1122,7 +1186,27 @@ async function executeSwap() {
     hideLoading();
   } catch (e) {
     hideLoading();
-    err(`Swap failed: ${e?.message || e}`);
+    let errorMsg = `Swap failed: ${e?.message || e}`;
+    
+    // Provide more helpful error messages
+    if (e?.code === "CALL_EXCEPTION" || e?.message?.includes("revert")) {
+      if (e?.message?.includes("INSUFFICIENT_OUTPUT_AMOUNT") || e?.message?.includes("require(false)")) {
+        errorMsg = "Swap failed: Slippage too high or insufficient liquidity. Try increasing slippage tolerance or reducing amount.";
+      } else if (e?.message?.includes("INSUFFICIENT_INPUT_AMOUNT")) {
+        errorMsg = "Swap failed: Insufficient input amount. Check your balance.";
+      } else if (e?.message?.includes("INSUFFICIENT_LIQUIDITY")) {
+        errorMsg = "Swap failed: Insufficient liquidity in the pool.";
+      } else {
+        errorMsg = "Swap failed: Transaction reverted. Check slippage settings and try again.";
+      }
+    } else if (e?.code === "INSUFFICIENT_FUNDS" || e?.message?.includes("insufficient funds")) {
+      errorMsg = "Swap failed: Insufficient balance. Check your wallet.";
+    } else if (e?.code === "ACTION_REJECTED" || e?.message?.includes("user rejected")) {
+      errorMsg = "Swap cancelled by user.";
+      return; // Don't show alert for user cancellation
+    }
+    
+    err(errorMsg);
   }
 }
 
