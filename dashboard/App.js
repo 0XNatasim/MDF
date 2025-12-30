@@ -441,6 +441,7 @@ async function refreshAll() {
     renderActions();
     updateKPIs();
     updateAvailableBalance();
+    await updatePoolReservesUI();
     await updateSwapQuoteAndButtons();
 
     setHeaderConnectionUI(Boolean(connectedAddress));
@@ -964,6 +965,202 @@ function getSlippageBps() {
 
 function deadlineTs() {
   return Math.floor(Date.now() / 1000) + 600;
+}
+
+/* =========================
+   Swap quote and buttons update
+========================= */
+async function updateSwapQuoteAndButtons() {
+  const quoteEl = $("swapQuoteOut");
+  const approveBtn = $("swapApproveBtn");
+  const execBtn = $("swapExecBtn");
+  
+  if (!quoteEl) return;
+
+  const side = $("swapSide")?.value || "buy";
+  const amountInStr = $("swapAmountIn")?.value?.trim() || "";
+  const amountIn = parseFloat(amountInStr);
+
+  // Reset quote display
+  quoteEl.textContent = "—";
+  if (approveBtn) approveBtn.disabled = true;
+  if (execBtn) execBtn.disabled = true;
+
+  if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
+    return;
+  }
+
+  try {
+    const decimals = connectedSnapshot.decimals || 18;
+    let amountInWei, tokenIn, tokenOut, quoteOut;
+
+    if (side === "buy") {
+      // Buy: MON (WMON) → MMM
+      amountInWei = ethers.parseEther(String(amountIn));
+      tokenIn = EFFECTIVE_WMON;
+      tokenOut = CONFIG.mmmToken;
+      quoteOut = await quoteOutFromReserves(amountInWei, tokenIn, tokenOut);
+      const quoteFormatted = ethers.formatUnits(quoteOut, decimals);
+      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MMM`;
+    } else {
+      // Sell: MMM → MON (WMON)
+      amountInWei = ethers.parseUnits(String(amountIn), decimals);
+      tokenIn = CONFIG.mmmToken;
+      tokenOut = EFFECTIVE_WMON;
+      quoteOut = await quoteOutFromReserves(amountInWei, tokenIn, tokenOut);
+      const quoteFormatted = ethers.formatEther(quoteOut);
+      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MON`;
+    }
+
+    // Enable buttons if wallet is connected
+    if (connectedAddress && routerWrite) {
+      if (side === "sell") {
+        // For selling MMM, check allowance
+        const allowance = await tokenRead.allowance(connectedAddress, CONFIG.router).catch(() => 0n);
+        const needsApproval = allowance < amountInWei;
+        if (approveBtn) approveBtn.disabled = !needsApproval;
+        if (execBtn) execBtn.disabled = needsApproval;
+      } else {
+        // For buying, no approval needed (using native MON)
+        if (approveBtn) approveBtn.disabled = true;
+        if (execBtn) execBtn.disabled = false;
+      }
+    }
+  } catch (e) {
+    console.warn("Quote update failed:", e);
+    quoteEl.textContent = "Error calculating quote";
+  }
+}
+
+/* =========================
+   Swap execution
+========================= */
+async function approveMMMMax() {
+  try {
+    if (!connectedAddress || !tokenWrite) return err("Connect wallet first.");
+    
+    showLoading("Approving MMM...");
+    const maxApproval = ethers.MaxUint256;
+    const tx = await tokenWrite.approve(CONFIG.router, maxApproval);
+    await tx.wait();
+    
+    await updateSwapQuoteAndButtons();
+    hideLoading();
+  } catch (e) {
+    hideLoading();
+    err(`Approval failed: ${e?.message || e}`);
+  }
+}
+
+async function executeSwap() {
+  try {
+    if (!connectedAddress || !routerWrite) return err("Connect wallet first.");
+
+    const side = $("swapSide")?.value || "buy";
+    const amountInStr = $("swapAmountIn")?.value?.trim() || "";
+    const amountIn = parseFloat(amountInStr);
+    const slippageBps = getSlippageBps();
+
+    if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
+      return err("Enter a valid amount.");
+    }
+
+    const decimals = connectedSnapshot.decimals || 18;
+    const deadline = deadlineTs();
+
+    showLoading("Executing swap...");
+
+    let tx;
+    if (side === "buy") {
+      // Buy: MON → MMM
+      const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
+      const amountInWei = ethers.parseEther(String(amountIn));
+      const quoteOut = await quoteOutFromReserves(amountInWei, EFFECTIVE_WMON, CONFIG.mmmToken);
+      const amountOutMin = (quoteOut * BigInt(10000 - slippageBps)) / 10000n;
+
+      tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
+        amountOutMin,
+        path,
+        connectedAddress,
+        deadline,
+        { value: amountInWei }
+      );
+    } else {
+      // Sell: MMM → MON
+      const path = [CONFIG.mmmToken, EFFECTIVE_WMON];
+      const amountInWei = ethers.parseUnits(String(amountIn), decimals);
+      const quoteOut = await quoteOutFromReserves(amountInWei, CONFIG.mmmToken, EFFECTIVE_WMON);
+      const amountOutMin = (quoteOut * BigInt(10000 - slippageBps)) / 10000n;
+
+      tx = await routerWrite.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        amountInWei,
+        amountOutMin,
+        path,
+        connectedAddress,
+        deadline
+      );
+    }
+
+    const rcpt = await tx.wait();
+
+    actions.unshift({
+      type: side === "buy" ? "Buy MMM" : "Sell MMM",
+      amount: side === "buy" ? amountIn : -amountIn,
+      address: "",
+      txHash: rcpt?.hash || tx?.hash,
+      status: "Completed",
+      date: nowDate(),
+    });
+
+    saveData();
+    await refreshAll();
+    renderActions();
+
+    $("swapAmountIn").value = "";
+    await updateSwapQuoteAndButtons();
+
+    hideLoading();
+  } catch (e) {
+    hideLoading();
+    err(`Swap failed: ${e?.message || e}`);
+  }
+}
+
+/* =========================
+   Send helpers
+========================= */
+function updateAvailableBalance() {
+  const el = $("availableBalance");
+  if (!el) return;
+  
+  if (!connectedAddress) {
+    el.textContent = "0 MMM";
+    return;
+  }
+  
+  el.textContent = formatMMM(connectedSnapshot.mmmHoldings);
+}
+
+function validateAmount() {
+  // Basic validation - can be extended
+  const amount = parseFloat($("amountInput")?.value || 0);
+  const max = connectedSnapshot.mmmHoldings || 0;
+  
+  if (amount > max) {
+    $("amountInput")?.setCustomValidity("Amount exceeds balance");
+  } else {
+    $("amountInput")?.setCustomValidity("");
+  }
+}
+
+function setAmount(pct) {
+  const max = connectedSnapshot.mmmHoldings || 0;
+  const amount = max * pct;
+  const input = $("amountInput");
+  if (input) {
+    input.value = amount > 0 ? amount.toFixed(6) : "";
+    validateAmount();
+  }
 }
 
 /* =========================
