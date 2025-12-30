@@ -1116,6 +1116,10 @@ async function executeSwap() {
       if (balance < amountInWei) {
         return err("Insufficient MON balance for this swap.");
       }
+      // Warn for very small amounts that might have rounding issues
+      if (amountIn < 0.01) {
+        console.warn("Very small swap amount - may have rounding issues. Consider using a larger amount or higher slippage.");
+      }
     } else {
       const balance = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
       const amountInWei = ethers.parseUnits(String(amountIn), decimals);
@@ -1132,14 +1136,24 @@ async function executeSwap() {
       const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
       const amountInWei = ethers.parseEther(String(amountIn));
       const quoteOut = await quoteOutFromReserves(amountInWei, EFFECTIVE_WMON, CONFIG.mmmToken);
+      
       // Apply buy tax: user receives less due to tax
       const buyTaxMultiplier = BigInt(10000 - mmmTaxRates.buyTaxBps);
       const adjustedQuote = (quoteOut * buyTaxMultiplier) / 10000n;
+      
+      // For very small amounts (< 1 MMM expected), use at least 2% slippage to account for rounding
+      const isSmallAmount = adjustedQuote < ethers.parseUnits("1", decimals);
+      const minSlippageBps = isSmallAmount ? 200 : 0; // 2% minimum for small amounts
+      const effectiveSlippageBps = Math.max(slippageBps, minSlippageBps);
+      
       // Apply slippage to the tax-adjusted quote
-      const amountOutMin = (adjustedQuote * BigInt(10000 - slippageBps)) / 10000n;
+      const amountOutMin = (adjustedQuote * BigInt(10000 - effectiveSlippageBps)) / 10000n;
+      
+      // Ensure amountOutMin is at least 1 wei to avoid zero
+      const finalAmountOutMin = amountOutMin > 0n ? amountOutMin : 1n;
 
       tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
-        amountOutMin,
+        finalAmountOutMin,
         path,
         connectedAddress,
         deadline,
@@ -1153,12 +1167,21 @@ async function executeSwap() {
       const sellTaxMultiplier = BigInt(10000 - mmmTaxRates.sellTaxBps);
       const effectiveAmountIn = (amountInWei * sellTaxMultiplier) / 10000n;
       const quoteOut = await quoteOutFromReserves(effectiveAmountIn, CONFIG.mmmToken, EFFECTIVE_WMON);
+      
+      // For very small amounts (< 0.001 MON expected), use at least 2% slippage
+      const isSmallAmount = quoteOut < ethers.parseEther("0.001");
+      const minSlippageBps = isSmallAmount ? 200 : 0; // 2% minimum for small amounts
+      const effectiveSlippageBps = Math.max(slippageBps, minSlippageBps);
+      
       // Apply slippage
-      const amountOutMin = (quoteOut * BigInt(10000 - slippageBps)) / 10000n;
+      const amountOutMin = (quoteOut * BigInt(10000 - effectiveSlippageBps)) / 10000n;
+      
+      // Ensure amountOutMin is at least 1 wei to avoid zero
+      const finalAmountOutMin = amountOutMin > 0n ? amountOutMin : 1n;
 
       tx = await routerWrite.swapExactTokensForETHSupportingFeeOnTransferTokens(
         amountInWei,
-        amountOutMin,
+        finalAmountOutMin,
         path,
         connectedAddress,
         deadline
