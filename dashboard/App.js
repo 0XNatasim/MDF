@@ -1,23 +1,10 @@
-/* App.js — MMM Dashboard (Monad Testnet) — FINAL (Router quote fix)
-   Key fix:
-   - STOP using router.getAmountsOut (it reverts on your router)
-   - Quote using Pair reserves (UniswapV2 math) via Factory -> Pair -> getReserves()
-   - Swaps still execute through router swapExact* methods
+/* App.js — MMM Dashboard (Monad Testnet) — COMPLETE
+   - Quotes use Pair reserves (UniswapV2 math). No router.getAmountsOut.
+   - Fetches: taxes, tracker MON, pool reserves, price (MMM<->MON).
+   - Implements swaps (buy/sell) + approvals.
+   Requires ethers v6 loaded in index.html.
+*/
 
-   Assumes your existing index.html IDs/classes:
-   - Links: mmmLink, trackerLink, poolLink
-   - KPI: kpiTaxes, kpiTrackerMon, kpiPrice, kpiPriceCardText, kpiRefresh
-   - Header: connectBtn, disconnectBtn, refreshBtn, connectLabel
-   - Cards/containers: connectedCard, walletsContainer
-   - Log: txBody, clearLogBtn
-   - Watch mgmt: addWatchBtn, watchConnectedBtn, resetBtn
-   - Send panel: walletSelect, amountInput, recipientInput, sendBtn, availableBalance, .chip
-   - Swap panel: swapSide, swapAmountIn, swapSlippage, swapQuoteOut, swapApproveBtn, swapExecBtn
-   - Slider: watchedSlider with .watched-slide and .watched-dot
-   - Loading: loadingOverlay, loadingText
-*/
-/* =========================pAart 1
-*/
 const CONFIG = {
   chainIdDec: 10143,
   chainIdHex: "0x279F",
@@ -32,14 +19,13 @@ const CONFIG = {
   // MMM / Tracker / Pool
   mmmToken: "0x1Ad3565c099F5242012Fb1f21aaA729EFcf75c16",
   tracker:  "0x5B870DAa512DB9DADEbD53d55045BAE798B4B86B",
-  pool:     "0x7d4A5Ed4C366aFa71c5b4158b2F203B1112AC7FD",
 
-  // Swap stack (confirmed by your console)
-  wmon:    "0x51C0bb68b65bd84De6518C939CB9dbe2d6Fa7079",
+  // Swap stack
+  wmon:    "0x51C0bb68b65bd84De6518C939CB9Dbe2d6Fa7079",
   factory: "0x8e8a713Be23d9be017d7A5f4D649982B5dD24615",
   router:  "0x53FE6D2499742779BF2Bd12a23e3c102fAe9fEcA",
 
-  // Watch list defaults
+  // Watch list defaults (optional)
   defaultWatch: ["0x22BC7a72000faE48a67520c056C0944d9a675412"],
 };
 
@@ -51,15 +37,10 @@ const ERC20_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
 ];
 
-const MMM_ABI = [
-  ...ERC20_ABI,
-  "function getTaxInfo() view returns (uint256 buyTaxBps, uint256 sellTaxBps, uint256 taxTokens)",
-];
-
 const ROUTER_ABI = [
+  "function WETH() view returns (address)",
   "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) payable",
   "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)",
-  "function WETH() view returns (address)",
 ];
 
 const FACTORY_ABI = [
@@ -73,10 +54,12 @@ const PAIR_ABI = [
 ];
 
 const TRACKER_ABI = [
+  // claimable probing (one of these usually exists)
   "function claimable(address) view returns (uint256)",
   "function pendingReward(address) view returns (uint256)",
   "function withdrawableDividendOf(address) view returns (uint256)",
   "function withdrawableRewardsOf(address) view returns (uint256)",
+  // claim methods (one of these usually exists)
   "function claim()",
   "function claim(address)",
   "function claimDividend()",
@@ -101,16 +84,16 @@ let routerWrite = null;
 let wallets = [];
 let actions = [];
 
-let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, monBalance: 0, decimals: 18 };
-let protocolSnapshot  = { taxesMMM: 0, trackerMon: 0, mmmPerMon: null, lastRefresh: null };
-let mmmTaxRates = { buyTaxBps: 500, sellTaxBps: 500 }; // Default 5%, will be updated from contract
+let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, decimals: 18 };
+let protocolSnapshot  = {
+  taxesMMM: 0,
+  trackerMon: 0,
+  mmmPerMon: null,
+  lastRefresh: null,
+  reserves: { mmm: null, wmon: null, pair: null }
+};
 
-// Router-resolved WMON/WETH
 let EFFECTIVE_WMON = null;
-
-// slider
-let sliderTimer = null;
-let sliderIndex = 0;
 
 /* =========================
    Helpers
@@ -148,6 +131,14 @@ function err(msg) {
   alert(msg);
 }
 
+function showLoading(msg) {
+  setText("loadingText", msg || "Processing...");
+  $("loadingOverlay")?.classList.remove("hidden");
+}
+function hideLoading() {
+  $("loadingOverlay")?.classList.add("hidden");
+}
+
 /* =========================
    Local storage
 ========================= */
@@ -155,12 +146,10 @@ function loadData() {
   wallets = JSON.parse(localStorage.getItem("mmm_watch_wallets") || "[]");
   actions = JSON.parse(localStorage.getItem("mmm_action_log") || "[]");
 }
-
 function saveData() {
   localStorage.setItem("mmm_watch_wallets", JSON.stringify(wallets));
   localStorage.setItem("mmm_action_log", JSON.stringify(actions));
 }
-
 function mkWallet(name, addr) {
   return {
     id: String(Date.now()) + Math.random().toString(16).slice(2),
@@ -172,96 +161,41 @@ function mkWallet(name, addr) {
 }
 
 /* =========================
-   Loading overlay
-========================= */
-function showLoading(msg) {
-  setText("loadingText", msg || "Processing...");
-  $("loadingOverlay")?.classList.remove("hidden");
-}
-function hideLoading() {
-  $("loadingOverlay")?.classList.add("hidden");
-}
-
-/* =========================
-   Slider (PNG) — unchanged
-========================= */
-function initWatchedSlider() {
-  const root = $("watchedSlider");
-  if (!root) return;
-
-  const slides = Array.from(root.querySelectorAll(".watched-slide"));
-  const dots = Array.from(root.querySelectorAll(".watched-dot"));
-  if (slides.length <= 1) return;
-
-  function setActive(i) {
-    sliderIndex = (i + slides.length) % slides.length;
-    slides.forEach((s, idx) => s.classList.toggle("is-active", idx === sliderIndex));
-    dots.forEach((d, idx) => d.classList.toggle("is-active", idx === sliderIndex));
-  }
-
-  function restartTimer() {
-    if (sliderTimer) clearInterval(sliderTimer);
-    sliderTimer = setInterval(() => setActive(sliderIndex + 1), 3500);
-  }
-
-  dots.forEach((d) => {
-    d.addEventListener("click", () => {
-      const i = Number(d.dataset.slide || 0);
-      setActive(i);
-      restartTimer();
-    });
-  });
-
-  setActive(0);
-  restartTimer();
-}
-
-/* =========================
    DOM Ready
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  // MMM + Tracker + Pool links
-  const mmmLink = $("mmmLink");
-  const trackerLink = $("trackerLink");
-  const poolLink = $("poolLink");
-
-  if (mmmLink) {
-    mmmLink.textContent = CONFIG.mmmToken;
-    mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
+  // Links
+  if ($("mmmLink")) {
+    $("mmmLink").textContent = CONFIG.mmmToken;
+    $("mmmLink").href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
-  if (trackerLink) {
-    trackerLink.textContent = CONFIG.tracker;
-    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
+  if ($("trackerLink")) {
+    $("trackerLink").textContent = CONFIG.tracker;
+    $("trackerLink").href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
   }
-  if (poolLink) {
-    poolLink.textContent = CONFIG.pool;
-    poolLink.href = `${CONFIG.explorerBase}/address/${CONFIG.pool}`;
+  if ($("poolLink")) {
+    // We resolve actual pair from factory; set link once we know it
+    $("poolLink").textContent = "—";
+    $("poolLink").href = "#";
   }
 
-  initWatchedSlider();
-
-  // Read providers
+  // Providers
   readProvider = new ethers.FallbackProvider(
     CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url))
   );
 
   tokenRead   = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
-  const mmmRead = new ethers.Contract(CONFIG.mmmToken, MMM_ABI, readProvider);
   trackerRead = new ethers.Contract(CONFIG.tracker,  TRACKER_ABI, readProvider);
   routerRead  = new ethers.Contract(CONFIG.router,   ROUTER_ABI, readProvider);
   factoryRead = new ethers.Contract(CONFIG.factory,  FACTORY_ABI, readProvider);
-  
-  // Load tax rates (will be refreshed in refreshAll)
-  await refreshTaxRates();
 
-  // Resolve effective WMON/WETH from router
+  // Resolve WMON from router (preferred)
   try {
     const routerWeth = await routerRead.WETH();
     EFFECTIVE_WMON = ethers.getAddress(routerWeth);
   } catch (_) {
     EFFECTIVE_WMON = ethers.getAddress(CONFIG.wmon);
   }
-  window.EFFECTIVE_WMON = EFFECTIVE_WMON;
 
   loadData();
   if (wallets.length === 0 && CONFIG.defaultWatch?.length) {
@@ -269,7 +203,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     saveData();
   }
 
-  // Header
+  // Header buttons
   $("connectBtn")?.addEventListener("click", () => connectWallet(false));
   $("disconnectBtn")?.addEventListener("click", () => disconnectWallet(false));
   $("refreshBtn")?.addEventListener("click", refreshAll);
@@ -292,14 +226,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("swapSide")?.addEventListener("change", updateSwapQuoteAndButtons);
   $("swapAmountIn")?.addEventListener("input", updateSwapQuoteAndButtons);
   $("swapSlippage")?.addEventListener("change", updateSwapQuoteAndButtons);
-  $("swapSlippageAuto")?.addEventListener("change", () => {
-    const autoCheckbox = $("swapSlippageAuto");
-    const slippageSelect = $("swapSlippage");
-    if (slippageSelect) {
-      slippageSelect.disabled = autoCheckbox?.checked || false;
-    }
-    updateSwapQuoteAndButtons();
-  });
   $("swapApproveBtn")?.addEventListener("click", approveMMMMax);
   $("swapExecBtn")?.addEventListener("click", executeSwap);
 
@@ -309,19 +235,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderWallets();
   renderActions();
   updateKPIs();
-  
-  // Initialize slippage auto checkbox state
-  const autoCheckbox = $("swapSlippageAuto");
-  const slippageSelect = $("swapSlippage");
-  if (autoCheckbox && slippageSelect) {
-    slippageSelect.disabled = autoCheckbox.checked || false;
-  }
-  
-  await updateSwapQuoteAndButtons();
 
   await refreshAll();
 
-  // Silent auto-connect
+  // Silent auto-connect if already authorized
   if (window.ethereum) {
     try {
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
@@ -330,8 +247,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-/* =========================Part 2
-*/
 /* =========================
    Header UI
 ========================= */
@@ -344,17 +259,24 @@ function setHeaderConnectionUI(isConnected) {
 }
 
 /* =========================
-   Pair/Reserve quoting (NO router.getAmountsOut)
+   Pair & Reserve quoting
 ========================= */
 async function ensurePair() {
   if (pairRead) return pairRead;
-
   if (!factoryRead || !EFFECTIVE_WMON) return null;
 
   const pairAddr = await factoryRead.getPair(EFFECTIVE_WMON, CONFIG.mmmToken);
   if (!pairAddr || pairAddr === ethers.ZeroAddress) return null;
 
   pairRead = new ethers.Contract(pairAddr, PAIR_ABI, readProvider);
+
+  // Update pool link
+  protocolSnapshot.reserves.pair = pairAddr;
+  if ($("poolLink")) {
+    $("poolLink").textContent = pairAddr;
+    $("poolLink").href = `${CONFIG.explorerBase}/address/${pairAddr}`;
+  }
+
   return pairRead;
 }
 
@@ -389,48 +311,40 @@ async function quoteOutFromReserves(amountIn, tokenIn, tokenOut) {
     throw new Error("Tokens not in pair");
   }
 
-  if (reserveIn === 0n || reserveOut === 0n) {
-    throw new Error("Empty reserves");
-  }
+  if (reserveIn === 0n || reserveOut === 0n) throw new Error("Empty reserves");
 
-  // amountOut = (amountIn * 997 * reserveOut) / (reserveIn * 1000 + amountIn * 997)
   const amountInWithFee = amountIn * 997n;
   const numerator = amountInWithFee * reserveOut;
   const denominator = (reserveIn * 1000n) + amountInWithFee;
+  if (denominator === 0n) throw new Error("Bad denominator");
 
-  if (denominator === 0n) throw new Error("Denominator is zero");
+  return numerator / denominator;
+}
 
-  const result = numerator / denominator;
+async function readReserves() {
+  const pair = await ensurePair();
+  if (!pair) return null;
 
-  return result;
+  const [reserves, token0] = await Promise.all([pair.getReserves(), pair.token0()]);
+  const [r0, r1] = reserves.slice(0, 2);
+
+  let mmmReserveBN, wmonReserveBN;
+  if (token0.toLowerCase() === CONFIG.mmmToken.toLowerCase()) {
+    mmmReserveBN = r0;
+    wmonReserveBN = r1;
+  } else {
+    mmmReserveBN = r1;
+    wmonReserveBN = r0;
+  }
+
+  return { mmmReserveBN, wmonReserveBN };
 }
 
 async function quoteMmmPerMon(mmmDecimals) {
-  try {
-    if (!EFFECTIVE_WMON) return null;
-    const one = ethers.parseEther("1");
-    const out = await quoteOutFromReserves(one, EFFECTIVE_WMON, CONFIG.mmmToken);
-    return Number(ethers.formatUnits(out, mmmDecimals));
-  } catch (e) {
-    console.warn("quoteMmmPerMon (reserves) failed:", e);
-    return null;
-  }
-}
-
-/* =========================
-   Refresh tax rates
-========================= */
-async function refreshTaxRates(mmmContract) {
-  try {
-    if (!mmmContract) {
-      mmmContract = new ethers.Contract(CONFIG.mmmToken, MMM_ABI, readProvider);
-    }
-    const taxInfo = await mmmContract.getTaxInfo();
-    mmmTaxRates.buyTaxBps = Number(taxInfo[0]);
-    mmmTaxRates.sellTaxBps = Number(taxInfo[1]);
-  } catch (e) {
-    console.warn("Could not read tax rates, using defaults:", e);
-  }
+  // 1 MON -> MMM (using WMON as input)
+  const oneMon = ethers.parseEther("1");
+  const out = await quoteOutFromReserves(oneMon, EFFECTIVE_WMON, CONFIG.mmmToken);
+  return Number(ethers.formatUnits(out, mmmDecimals));
 }
 
 /* =========================
@@ -443,10 +357,7 @@ async function refreshAll() {
     const decimals = await tokenRead.decimals().catch(() => 18);
     connectedSnapshot.decimals = decimals;
 
-    // Refresh tax rates
-    await refreshTaxRates();
-
-    // Taxes in MMM contract address
+    // Taxes: MMM held by MMM token contract (your label matches this)
     const taxesRaw = await tokenRead.balanceOf(CONFIG.mmmToken).catch(() => 0n);
     protocolSnapshot.taxesMMM = Number(ethers.formatUnits(taxesRaw, decimals));
 
@@ -454,8 +365,29 @@ async function refreshAll() {
     const trackerMonRaw = await readProvider.getBalance(CONFIG.tracker).catch(() => 0n);
     protocolSnapshot.trackerMon = Number(ethers.formatEther(trackerMonRaw));
 
+    // Pool reserves
+    const reserves = await readReserves().catch(() => null);
+    if (reserves) {
+      const mmmReserve = Number(ethers.formatUnits(reserves.mmmReserveBN, decimals));
+      const wmonReserve = Number(ethers.formatEther(reserves.wmonReserveBN));
+      protocolSnapshot.reserves.mmm = mmmReserve;
+      protocolSnapshot.reserves.wmon = wmonReserve;
+
+      setText("poolMmmReserves", `${fmt(mmmReserve)} MMM`);
+      setText("poolWmonReserves", `${fmt(wmonReserve)} WMON`);
+
+      // Display “value” in MON terms (both sides equal in a v2 pool)
+      setText("poolMmmValue", `≈ ${fmt(wmonReserve)} MON`);
+      setText("poolWmonValue", `≈ ${fmt(wmonReserve)} MON`);
+
+      // Value split ~ 50/50 when priced at pool ratio
+      const hasLiq = reserves.mmmReserveBN > 0n && reserves.wmonReserveBN > 0n;
+      setText("poolMmmPct", hasLiq ? `${fmt(50, 2)} %` : "—");
+      setText("poolWmonPct", hasLiq ? `${fmt(50, 2)} %` : "—");
+    }
+
     // Price quote from reserves
-    protocolSnapshot.mmmPerMon = await quoteMmmPerMon(decimals);
+    protocolSnapshot.mmmPerMon = await quoteMmmPerMon(decimals).catch(() => null);
 
     // Watched balances
     for (const w of wallets) {
@@ -467,20 +399,15 @@ async function refreshAll() {
 
     // Connected snapshot
     if (connectedAddress) {
-      const [bal, claim, monBal] = await Promise.all([
-        tokenRead.balanceOf(connectedAddress).catch(() => 0n),
-        getClaimable(connectedAddress).catch(() => 0n),
-        readProvider.getBalance(connectedAddress).catch(() => 0n)
-      ]);
+      const bal = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
+      const claim = await getClaimable(connectedAddress).catch(() => 0n);
       connectedSnapshot.address = connectedAddress;
       connectedSnapshot.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
       connectedSnapshot.claimable = Number(ethers.formatUnits(claim, decimals));
-      connectedSnapshot.monBalance = Number(ethers.formatEther(monBal));
     } else {
       connectedSnapshot.address = null;
       connectedSnapshot.mmmHoldings = 0;
       connectedSnapshot.claimable = 0;
-      connectedSnapshot.monBalance = 0;
     }
 
     protocolSnapshot.lastRefresh = new Date();
@@ -491,7 +418,6 @@ async function refreshAll() {
     renderActions();
     updateKPIs();
     updateAvailableBalance();
-    await updatePoolReservesUI();
     await updateSwapQuoteAndButtons();
 
     setHeaderConnectionUI(Boolean(connectedAddress));
@@ -523,7 +449,7 @@ async function getClaimable(addr) {
   return 0n;
 }
 
-/* =========================  
+/* =========================
    KPIs
 ========================= */
 function updateKPIs() {
@@ -534,11 +460,9 @@ function updateKPIs() {
   if (protocolSnapshot.mmmPerMon !== null && protocolSnapshot.mmmPerMon !== undefined) {
     const mmmPerMon = protocolSnapshot.mmmPerMon;
     const monPerMmm = mmmPerMon > 0 ? (1 / mmmPerMon) : 0;
-    priceText = `1 MON ≈ ${fmt(mmmPerMon, 6)} MMM | 1 MMM ≈ ${fmt(monPerMmm, 8)} MON`;
+    priceText = `1 MON ≈ ${fmt(mmmPerMon, 6)} MMM | 1 MMM ≈ ${fmt(monPerMmm, 10)} MON`;
   }
-
   setText("kpiPrice", priceText);
-  setText("kpiPriceCardText", priceText);
 
   setText(
     "kpiRefresh",
@@ -580,11 +504,6 @@ function renderConnectedCard() {
 
     <div class="wallet-metrics">
       <div class="metric">
-        <span class="k">MON Balance (connected)</span>
-        <span class="v">${addr ? formatMon(connectedSnapshot.monBalance) : "—"}</span>
-      </div>
-
-      <div class="metric">
         <span class="k">MMM Balance (connected)</span>
         <span class="v">${addr ? formatMMM(connectedSnapshot.mmmHoldings) : "—"}</span>
       </div>
@@ -608,46 +527,6 @@ function renderConnectedCard() {
 
   $("connectedClaimBtn")?.addEventListener("click", claimConnected);
   $("copyConnectedInline")?.addEventListener("click", copyConnectedAddress);
-}
-
-/* =========================
-   >>> POOL RESERVES UI (ONLY ADDITION)
-========================= */
-async function updatePoolReservesUI() {
-  try {
-    const pair = await ensurePair();
-    if (!pair) return;
-
-    const [r0, r1] = (await pair.getReserves()).slice(0, 2);
-    const token0 = await pair.token0();
-
-    let mmmReserve, wmonReserve;
-    if (token0.toLowerCase() === CONFIG.mmmToken.toLowerCase()) {
-      mmmReserve  = r0;
-      wmonReserve = r1;
-    } else {
-      mmmReserve  = r1;
-      wmonReserve = r0;
-    }
-
-    const mmm = Number(
-      ethers.formatUnits(mmmReserve, connectedSnapshot.decimals || 18)
-    );
-    const wmon = Number(
-      ethers.formatEther(wmonReserve)
-    );
-
-    const total = mmm + wmon || 1;
-
-    setText("poolMmmReserves", `${fmt(mmm)} MMM`);
-    setText("poolWmonReserves", `${fmt(wmon)} WMON`);
-    setText("poolMmmValue", `${fmt(mmm)} units`);
-    setText("poolWmonValue", `${fmt(wmon)} units`);
-    setText("poolMmmPct", `${fmt((mmm / total) * 100, 2)} %`);
-    setText("poolWmonPct", `${fmt((wmon / total) * 100, 2)} %`);
-  } catch (e) {
-    console.warn("Pool reserves UI update failed:", e);
-  }
 }
 
 /* =========================
@@ -765,32 +644,26 @@ function renderActions() {
   });
 }
 
-/* =========================part 4
-*/
 /* =========================
    Connect / disconnect / copy
 ========================= */
 async function connectWallet(silent) {
   try {
-    // Note: Some wallet extensions (like evmAsk) may show "Cannot redefine property: ethereum" 
-    // This is harmless - it's the extension trying to inject/redefine window.ethereum
-    // We cache it here to avoid issues if it gets redefined
-    const ethereum = window.ethereum;
-    if (!ethereum) return err("No injected wallet found (MetaMask/Backpack).");
+    if (!window.ethereum) return err("No injected wallet found (MetaMask/Backpack).");
     showLoading("Connecting wallet...");
 
-    browserProvider = new ethers.BrowserProvider(ethereum);
+    browserProvider = new ethers.BrowserProvider(window.ethereum);
 
     const net = await browserProvider.getNetwork();
     if (Number(net.chainId) !== CONFIG.chainIdDec) {
       try {
-        await ethereum.request({
+        await window.ethereum.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: CONFIG.chainIdHex }]
         });
       } catch (e) {
         if (e?.code === 4902) {
-          await ethereum.request({
+          await window.ethereum.request({
             method: "wallet_addEthereumChain",
             params: [{
               chainId: CONFIG.chainIdHex,
@@ -821,7 +694,7 @@ async function connectWallet(silent) {
     await refreshAll();
     hideLoading();
 
-    ethereum.on?.("accountsChanged", async (accounts) => {
+    window.ethereum.on?.("accountsChanged", async (accounts) => {
       if (!accounts?.length) { disconnectWallet(true); return; }
       connectedAddress = ethers.getAddress(accounts[0]);
       signer = await browserProvider.getSigner();
@@ -834,7 +707,7 @@ async function connectWallet(silent) {
       await refreshAll();
     });
 
-    ethereum.on?.("chainChanged", () => location.reload());
+    window.ethereum.on?.("chainChanged", () => location.reload());
   } catch (e) {
     hideLoading();
     if (!silent) err(`Connect failed: ${e?.message || e}`);
@@ -851,7 +724,6 @@ function disconnectWallet(silent = false) {
   connectedSnapshot.address = null;
   connectedSnapshot.mmmHoldings = 0;
   connectedSnapshot.claimable = 0;
-  connectedSnapshot.monBalance = 0;
 
   setHeaderConnectionUI(false);
   renderSendDropdown();
@@ -935,7 +807,6 @@ async function claimTokens(addr) {
     saveData();
     await refreshAll();
     renderActions();
-
     hideLoading();
   } catch (e) {
     hideLoading();
@@ -960,6 +831,29 @@ function renderSendDropdown() {
   opt.value = connectedAddress;
   opt.textContent = `Connected (${shortAddr(connectedAddress)})`;
   sel.appendChild(opt);
+}
+
+async function updateAvailableBalance() {
+  const el = $("availableBalance");
+  if (!el) return;
+
+  if (!connectedAddress) {
+    el.textContent = "—";
+    return;
+  }
+  el.textContent = `${fmt(connectedSnapshot.mmmHoldings)} MMM`;
+}
+
+function validateAmount() {
+  const v = parseFloat($("amountInput")?.value || "0");
+  if (!Number.isFinite(v) || v < 0) return;
+}
+
+function setAmount(pct) {
+  if (!connectedAddress) return;
+  const bal = Number(connectedSnapshot.mmmHoldings || 0);
+  const v = (bal * (pct / 100));
+  if ($("amountInput")) $("amountInput").value = String(v);
 }
 
 async function sendTokens() {
@@ -1007,7 +901,6 @@ async function sendTokens() {
     saveData();
     await refreshAll();
     renderActions();
-
     hideLoading();
   } catch (e) {
     hideLoading();
@@ -1016,149 +909,78 @@ async function sendTokens() {
 }
 
 /* =========================
-   Swap helpers / execution
+   Swap
 ========================= */
-function getSlippageBps(amountIn = null) {
-  const autoCheckbox = $("swapSlippageAuto");
-  const isAuto = autoCheckbox?.checked || false;
-  
-  if (isAuto && amountIn !== null) {
-    // Automatic slippage calculation based on amount
-    // Smaller amounts need more slippage tolerance
-    if (amountIn < 0.001) {
-      return 500; // 5% for very small amounts
-    } else if (amountIn < 0.01) {
-      return 300; // 3% for small amounts
-    } else if (amountIn < 0.1) {
-      return 200; // 2% for medium amounts
-    } else if (amountIn < 1) {
-      return 150; // 1.5% for larger amounts
-    } else {
-      return 100; // 1% for very large amounts
-    }
-  }
-  
-  // Manual slippage from dropdown
+function getSlippageBps() {
   const v = parseFloat(($("swapSlippage")?.value || "1"));
-  const bps = Math.floor((Number.isFinite(v) ? v : 1) * 100);
-  // Cap at 99% (9900 bps) to ensure amountOutMin is always > 0
-  return Math.min(bps, 9900);
+  return Math.floor((Number.isFinite(v) ? v : 1) * 100);
 }
-
 function deadlineTs() {
   return Math.floor(Date.now() / 1000) + 600;
 }
 
-/* =========================
-   Swap quote and buttons update
-========================= */
 async function updateSwapQuoteAndButtons() {
-  const quoteEl = $("swapQuoteOut");
-  const approveBtn = $("swapApproveBtn");
-  const execBtn = $("swapExecBtn");
-  
-  if (!quoteEl) return;
-
-  const side = $("swapSide")?.value || "buy";
-  const amountInStr = $("swapAmountIn")?.value?.trim() || "";
-  const amountIn = parseFloat(amountInStr);
-
-  // Reset quote display
-  quoteEl.textContent = "—";
-  if (approveBtn) approveBtn.disabled = true;
-  if (execBtn) execBtn.disabled = true;
-
-  if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
-    // Hide auto slippage display if no amount
-    const slippageDisplay = $("swapSlippageDisplay");
-    if (slippageDisplay) slippageDisplay.style.display = "none";
-    return;
-  }
-
-  // Show/hide auto slippage display
-  const autoCheckbox = $("swapSlippageAuto");
-  const slippageDisplay = $("swapSlippageDisplay");
-  const slippageValue = $("swapSlippageValue");
-  const isAuto = autoCheckbox?.checked || false;
-  
-  if (slippageDisplay) {
-    slippageDisplay.style.display = isAuto ? "flex" : "none";
-  }
-  
-  // Calculate and display auto slippage
-  if (isAuto && slippageValue) {
-    const autoSlippageBps = getSlippageBps(amountIn);
-    const autoSlippagePercent = (autoSlippageBps / 100).toFixed(2);
-    slippageValue.textContent = `${autoSlippagePercent}%`;
-  }
-
   try {
+    const quoteEl = $("swapQuoteOut");
+    const approveBtn = $("swapApproveBtn");
+    const execBtn = $("swapExecBtn");
+
+    if (!quoteEl) return;
+
+    const side = $("swapSide")?.value || "buy"; // "buy" or "sell"
+    const amountInStr = ($("swapAmountIn")?.value || "0").trim();
+    const amountIn = Number(amountInStr);
+
+    quoteEl.textContent = "—";
+
+    if (approveBtn) approveBtn.disabled = true;
+    if (execBtn) execBtn.disabled = true;
+
+    if (!amountIn || amountIn <= 0) return;
+
     const decimals = connectedSnapshot.decimals || 18;
-    let amountInWei, tokenIn, tokenOut, quoteOut;
 
+    // Quote
+    let outBN;
     if (side === "buy") {
-      // Buy: MON (WMON) → MMM
-      // Note: MMM has buy tax, so actual received will be less than quoted
-      amountInWei = ethers.parseEther(String(amountIn));
-      tokenIn = EFFECTIVE_WMON;
-      tokenOut = CONFIG.mmmToken;
-      quoteOut = await quoteOutFromReserves(amountInWei, tokenIn, tokenOut);
-      // Apply buy tax: user receives (100 - buyTaxBps) / 100 of quoted amount
-      const buyTaxMultiplier = BigInt(10000 - mmmTaxRates.buyTaxBps);
-      const adjustedQuote = (quoteOut * buyTaxMultiplier) / 10000n;
-      const quoteFormatted = ethers.formatUnits(adjustedQuote, decimals);
-      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MMM (after ${mmmTaxRates.buyTaxBps/100}% tax)`;
+      // MON -> MMM
+      const inWei = ethers.parseEther(amountInStr);
+      outBN = await quoteOutFromReserves(inWei, EFFECTIVE_WMON, CONFIG.mmmToken);
+      quoteEl.textContent = `${fmt(Number(ethers.formatUnits(outBN, decimals)))} MMM (est.)`;
     } else {
-      // Sell: MMM → MON (WMON)
-      // Note: MMM has sell tax, so only (100 - sellTaxBps) / 100 actually goes into swap
-      amountInWei = ethers.parseUnits(String(amountIn), decimals);
-      tokenIn = CONFIG.mmmToken;
-      tokenOut = EFFECTIVE_WMON;
-      // Calculate effective amount after sell tax
-      const sellTaxMultiplier = BigInt(10000 - mmmTaxRates.sellTaxBps);
-      const effectiveAmountIn = (amountInWei * sellTaxMultiplier) / 10000n;
-      quoteOut = await quoteOutFromReserves(effectiveAmountIn, tokenIn, tokenOut);
-      const quoteFormatted = ethers.formatEther(quoteOut);
-      quoteEl.textContent = `≈ ${fmt(quoteFormatted, 6)} MON (after ${mmmTaxRates.sellTaxBps/100}% tax)`;
-    }
+      // MMM -> MON
+      const inMMM = ethers.parseUnits(amountInStr, decimals);
+      outBN = await quoteOutFromReserves(inMMM, CONFIG.mmmToken, EFFECTIVE_WMON);
+      quoteEl.textContent = `${fmt(Number(ethers.formatEther(outBN)))} MON (est.)`;
 
-    // Enable buttons if wallet is connected
-    if (connectedAddress && routerWrite) {
-      if (side === "sell") {
-        // For selling MMM, check allowance
+      // Need approval for sell
+      if (connectedAddress && tokenRead) {
         const allowance = await tokenRead.allowance(connectedAddress, CONFIG.router).catch(() => 0n);
-        const needsApproval = allowance < amountInWei;
-        if (approveBtn) approveBtn.disabled = !needsApproval;
-        if (execBtn) execBtn.disabled = needsApproval;
-      } else {
-        // For buying, no approval needed (using native MON)
-        if (approveBtn) approveBtn.disabled = true;
-        if (execBtn) execBtn.disabled = false;
+        if (approveBtn) approveBtn.disabled = allowance >= inMMM;
       }
     }
+
+    // Enable execute only if connected
+    if (execBtn) execBtn.disabled = !connectedAddress;
   } catch (e) {
-    console.warn("Quote update failed:", e);
-    quoteEl.textContent = "Error calculating quote";
+    console.warn("swap quote failed:", e);
   }
 }
 
-/* =========================
-   Swap execution
-========================= */
 async function approveMMMMax() {
   try {
     if (!connectedAddress || !tokenWrite) return err("Connect wallet first.");
-    
-    showLoading("Approving MMM...");
-    const maxApproval = ethers.MaxUint256;
-    const tx = await tokenWrite.approve(CONFIG.router, maxApproval);
+    showLoading("Approving MMM for router...");
+
+    // Use max uint256 allowance
+    const tx = await tokenWrite.approve(CONFIG.router, ethers.MaxUint256);
     await tx.wait();
-    
-    await updateSwapQuoteAndButtons();
+
     hideLoading();
+    await updateSwapQuoteAndButtons();
   } catch (e) {
     hideLoading();
-    err(`Approval failed: ${e?.message || e}`);
+    err(`Approve failed: ${e?.message || e}`);
   }
 }
 
@@ -1167,118 +989,65 @@ async function executeSwap() {
     if (!connectedAddress || !routerWrite) return err("Connect wallet first.");
 
     const side = $("swapSide")?.value || "buy";
-    const amountInStr = $("swapAmountIn")?.value?.trim() || "";
-    const amountIn = parseFloat(amountInStr);
-    const slippageBps = getSlippageBps(amountIn);
-
-    if (!amountInStr || amountIn <= 0 || !Number.isFinite(amountIn)) {
-      return err("Enter a valid amount.");
-    }
+    const amountInStr = ($("swapAmountIn")?.value || "0").trim();
+    const amountIn = Number(amountInStr);
+    if (!amountIn || amountIn <= 0) return err("Enter a valid swap amount.");
 
     const decimals = connectedSnapshot.decimals || 18;
+    const slippageBps = getSlippageBps();
     const deadline = deadlineTs();
 
-    // Validate balance before swap
-    if (side === "buy") {
-      const amountInWei = ethers.parseEther(String(amountIn));
-      // Use cached balance, but refresh if needed
-      let balance = ethers.parseEther(String(connectedSnapshot.monBalance || 0));
-      
-      // If balance seems stale or zero, refresh it
-      if (balance === 0n && browserProvider) {
-        balance = await browserProvider.getBalance(connectedAddress).catch(() => 0n);
-        connectedSnapshot.monBalance = Number(ethers.formatEther(balance));
-      }
-      
-      // Reserve some MON for gas (estimate ~0.001 MON for gas)
-      const gasReserve = ethers.parseEther("0.001");
-      const requiredTotal = amountInWei + gasReserve;
-      
-      if (balance < requiredTotal) {
-        const available = Number(ethers.formatEther(balance));
-        const needed = amountIn + 0.001;
-        return err(`Insufficient MON balance. Available: ${fmt(available, 6)} MON, Needed: ${fmt(needed, 6)} MON (including gas)`);
-      }
-      
-      // Warn for very small amounts that might have rounding issues
-      if (amountIn < 0.01) {
-        console.warn("Very small swap amount - may have rounding issues. Consider using a larger amount or higher slippage.");
-      }
-    } else {
-      const amountInWei = ethers.parseUnits(String(amountIn), decimals);
-      // Use cached balance
-      const balance = ethers.parseUnits(String(connectedSnapshot.mmmHoldings || 0), decimals);
-      
-      if (balance < amountInWei) {
-        return err(`Insufficient MMM balance. Available: ${formatMMM(connectedSnapshot.mmmHoldings)}, Needed: ${formatMMM(amountIn)}`);
-      }
-    }
-
-    showLoading("Executing swap...");
+    showLoading("Preparing swap quote...");
 
     let tx;
     if (side === "buy") {
-      // Buy: MON → MMM
-      const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
-      const amountInWei = ethers.parseEther(String(amountIn));
-      const quoteOut = await quoteOutFromReserves(amountInWei, EFFECTIVE_WMON, CONFIG.mmmToken);
-      
-      // Apply buy tax: user receives less due to tax
-      const buyTaxMultiplier = BigInt(10000 - mmmTaxRates.buyTaxBps);
-      const adjustedQuote = (quoteOut * buyTaxMultiplier) / 10000n;
-      
-      // For very small amounts (< 1 MMM expected), use at least 2% slippage to account for rounding
-      const isSmallAmount = adjustedQuote < ethers.parseUnits("1", decimals);
-      const minSlippageBps = isSmallAmount ? 200 : 0; // 2% minimum for small amounts
-      const effectiveSlippageBps = Math.max(slippageBps, minSlippageBps);
-      
-      // Apply slippage to the tax-adjusted quote
-      const amountOutMin = (adjustedQuote * BigInt(10000 - effectiveSlippageBps)) / 10000n;
-      
-      // Ensure amountOutMin is at least 1 wei to avoid zero
-      const finalAmountOutMin = amountOutMin > 0n ? amountOutMin : 1n;
+      // MON -> MMM
+      const inWei = ethers.parseEther(amountInStr);
+      const outBN = await quoteOutFromReserves(inWei, EFFECTIVE_WMON, CONFIG.mmmToken);
+      const minOut = (outBN * BigInt(10_000 - slippageBps)) / 10_000n;
 
+      const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
+
+      // Some RPCs fail estimateGas when state is weird; force gasLimit.
       tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
-        finalAmountOutMin,
+        minOut,
         path,
         connectedAddress,
         deadline,
-        { value: amountInWei }
+        { value: inWei, gasLimit: 3_000_000n }
       );
     } else {
-      // Sell: MMM → MON
+      // MMM -> MON
+      if (!tokenWrite) return err("Token signer not ready. Reconnect wallet.");
+
+      const inMMM = ethers.parseUnits(amountInStr, decimals);
+      const outBN = await quoteOutFromReserves(inMMM, CONFIG.mmmToken, EFFECTIVE_WMON);
+      const minOut = (outBN * BigInt(10_000 - slippageBps)) / 10_000n;
+
+      // Ensure allowance
+      const allowance = await tokenRead.allowance(connectedAddress, CONFIG.router).catch(() => 0n);
+      if (allowance < inMMM) {
+        hideLoading();
+        return err("Approve MMM first (router allowance too low).");
+      }
+
       const path = [CONFIG.mmmToken, EFFECTIVE_WMON];
-      const amountInWei = ethers.parseUnits(String(amountIn), decimals);
-      // Account for sell tax: only part of amountIn actually goes into swap
-      const sellTaxMultiplier = BigInt(10000 - mmmTaxRates.sellTaxBps);
-      const effectiveAmountIn = (amountInWei * sellTaxMultiplier) / 10000n;
-      const quoteOut = await quoteOutFromReserves(effectiveAmountIn, CONFIG.mmmToken, EFFECTIVE_WMON);
-      
-      // For very small amounts (< 0.001 MON expected), use at least 2% slippage
-      const isSmallAmount = quoteOut < ethers.parseEther("0.001");
-      const minSlippageBps = isSmallAmount ? 200 : 0; // 2% minimum for small amounts
-      const effectiveSlippageBps = Math.max(slippageBps, minSlippageBps);
-      
-      // Apply slippage
-      const amountOutMin = (quoteOut * BigInt(10000 - effectiveSlippageBps)) / 10000n;
-      
-      // Ensure amountOutMin is at least 1 wei to avoid zero
-      const finalAmountOutMin = amountOutMin > 0n ? amountOutMin : 1n;
 
       tx = await routerWrite.swapExactTokensForETHSupportingFeeOnTransferTokens(
-        amountInWei,
-        finalAmountOutMin,
+        inMMM,
+        minOut,
         path,
         connectedAddress,
-        deadline
+        deadline,
+        { gasLimit: 3_000_000n }
       );
     }
 
     const rcpt = await tx.wait();
 
     actions.unshift({
-      type: side === "buy" ? "Buy MMM" : "Sell MMM",
-      amount: side === "buy" ? amountIn : -amountIn,
+      type: side === "buy" ? "Buy" : "Sell",
+      amount: 0,
       address: "",
       txHash: rcpt?.hash || tx?.hash,
       status: "Completed",
@@ -1288,71 +1057,10 @@ async function executeSwap() {
     saveData();
     await refreshAll();
     renderActions();
-
-    $("swapAmountIn").value = "";
-    await updateSwapQuoteAndButtons();
-
     hideLoading();
   } catch (e) {
     hideLoading();
-    let errorMsg = `Swap failed: ${e?.message || e}`;
-    
-    // Provide more helpful error messages
-    if (e?.code === "CALL_EXCEPTION" || e?.message?.includes("revert")) {
-      if (e?.message?.includes("INSUFFICIENT_OUTPUT_AMOUNT") || e?.message?.includes("require(false)")) {
-        errorMsg = "Swap failed: Slippage too high or insufficient liquidity. Try increasing slippage tolerance or reducing amount.";
-      } else if (e?.message?.includes("INSUFFICIENT_INPUT_AMOUNT")) {
-        errorMsg = "Swap failed: Insufficient input amount. Check your balance.";
-      } else if (e?.message?.includes("INSUFFICIENT_LIQUIDITY")) {
-        errorMsg = "Swap failed: Insufficient liquidity in the pool.";
-      } else {
-        errorMsg = "Swap failed: Transaction reverted. Check slippage settings and try again.";
-      }
-    } else if (e?.code === "INSUFFICIENT_FUNDS" || e?.message?.includes("insufficient funds")) {
-      errorMsg = "Swap failed: Insufficient balance. Check your wallet.";
-    } else if (e?.code === "ACTION_REJECTED" || e?.message?.includes("user rejected")) {
-      errorMsg = "Swap cancelled by user.";
-      return; // Don't show alert for user cancellation
-    }
-    
-    err(errorMsg);
-  }
-}
-
-/* =========================
-   Send helpers
-========================= */
-function updateAvailableBalance() {
-  const el = $("availableBalance");
-  if (!el) return;
-  
-  if (!connectedAddress) {
-    el.textContent = "0 MMM";
-    return;
-  }
-  
-  el.textContent = formatMMM(connectedSnapshot.mmmHoldings);
-}
-
-function validateAmount() {
-  // Basic validation - can be extended
-  const amount = parseFloat($("amountInput")?.value || 0);
-  const max = connectedSnapshot.mmmHoldings || 0;
-  
-  if (amount > max) {
-    $("amountInput")?.setCustomValidity("Amount exceeds balance");
-  } else {
-    $("amountInput")?.setCustomValidity("");
-  }
-}
-
-function setAmount(pct) {
-  const max = connectedSnapshot.mmmHoldings || 0;
-  const amount = max * pct;
-  const input = $("amountInput");
-  if (input) {
-    input.value = amount > 0 ? amount.toFixed(6) : "";
-    validateAmount();
+    err(`Swap failed: ${e?.message || e}`);
   }
 }
 
@@ -1414,10 +1122,3 @@ function clearLog() {
   saveData();
   renderActions();
 }
-
-/* =========================
-   >>> FINAL HOOK (POOL UI REFRESH)
-========================= */
-// IMPORTANT: add ONE call inside refreshAll()
-// (already placed in Part 2 context):
-// await updatePoolReservesUI();
