@@ -1004,7 +1004,9 @@ async function sendTokens() {
 ========================= */
 function getSlippageBps() {
   const v = parseFloat(($("swapSlippage")?.value || "1"));
-  return Math.floor((Number.isFinite(v) ? v : 1) * 100);
+  const bps = Math.floor((Number.isFinite(v) ? v : 1) * 100);
+  // Cap at 99% (9900 bps) to ensure amountOutMin is always > 0
+  return Math.min(bps, 9900);
 }
 
 function deadlineTs() {
