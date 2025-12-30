@@ -447,11 +447,14 @@ body {
   position: relative;
   overflow: hidden;
   padding: 0;
+  flex-shrink: 0; /* Prevent slider from shrinking */
 }
 .watched-slide {
   display: none;
   width: 100%;
   height: auto;
+  max-height: 400px;
+  object-fit: contain; /* Maintain aspect ratio */
 }
 .watched-slide.is-active { display: block; }
 .watched-dots {
@@ -594,10 +597,17 @@ body {
   .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  /* slider sits higher and stays visible */
+  /* slider stays above watched wallets in normal flow */
   #watchedSlider.watched-slider{
-    position: sticky;
-    top: 86px; /* adjust if needed */
+    position: relative;
+    max-height: 400px; /* Limit slider height */
+    overflow: hidden;
+  }
+  
+  /* Ensure watched wallets panel stays below slider */
+  .dash-right .panel {
+    position: relative;
+    z-index: 1;
   }
 }
 
