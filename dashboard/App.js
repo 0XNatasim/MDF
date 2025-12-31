@@ -16,7 +16,7 @@ const CONFIG = {
   ],
   explorerBase: "https://testnet.monadvision.com",
 
-  // MMM / Tracker / Pool
+  // MMM / Tracker
   mmmToken: "0x1Ad3565c099F5242012Fb1f21aaA729EFcf75c16",
   tracker:  "0x5B870DAa512DB9DADEbD53d55045BAE798B4B86B",
 
@@ -115,7 +115,6 @@ function fmt(n, d = 6) {
 function formatMMM(x) { return `${fmt(Number(x || 0), 6)} MMM`; }
 function formatMon(x) { return `${fmt(Number(x || 0), 6)} MON`; }
 function formatClaimMon(x) { return `${fmt(Number(x || 0), 6)} MON`; }
-
 
 function nowDate() { return new Date().toISOString().split("T")[0]; }
 
@@ -382,7 +381,6 @@ async function refreshAll() {
       setText("poolMmmValue", `≈ ${fmt(wmonReserve)} MON`);
       setText("poolWmonValue", `≈ ${fmt(wmonReserve)} MON`);
 
-      // Value split ~ 50/50 when priced at pool ratio
       const hasLiq = reserves.mmmReserveBN > 0n && reserves.wmonReserveBN > 0n;
       setText("poolMmmPct", hasLiq ? `${fmt(50, 2)} %` : "—");
       setText("poolWmonPct", hasLiq ? `${fmt(50, 2)} %` : "—");
@@ -397,8 +395,8 @@ async function refreshAll() {
       const claim = await getClaimable(w.address).catch(() => 0n);
 
       w.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
-      w.claimableMon = Number(ethers.formatEther(claim)); // <-- MON
-  }
+      w.claimableMon = Number(ethers.formatEther(claim)); // MON
+    }
 
     // Connected snapshot
     if (connectedAddress) {
@@ -407,7 +405,7 @@ async function refreshAll() {
 
       connectedSnapshot.address = connectedAddress;
       connectedSnapshot.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
-      connectedSnapshot.claimableMon = Number(ethers.formatEther(claim)); // <-- MON
+      connectedSnapshot.claimableMon = Number(ethers.formatEther(claim)); // MON
     } else {
       connectedSnapshot.address = null;
       connectedSnapshot.mmmHoldings = 0;
@@ -475,14 +473,14 @@ function updateKPIs() {
 }
 
 /* =========================
-   Connected card
+   Connected card  (FIXED: claimable is MON)
 ========================= */
 function renderConnectedCard() {
   const el = $("connectedCard");
   if (!el) return;
 
   const addr = connectedAddress ? connectedAddress : null;
-  const canClaim = Boolean(addr) && Number(connectedSnapshot.claimable || 0) > 0;
+  const canClaim = Boolean(addr) && Number(connectedSnapshot.claimableMon || 0) > 0;
   const explorerLink = addr ? `${CONFIG.explorerBase}/address/${addr}` : "#";
 
   el.innerHTML = `
@@ -515,7 +513,7 @@ function renderConnectedCard() {
       <div>
         <div class="metric" style="margin-bottom:8px;">
           <span class="k">Claimable (connected)</span>
-          <span class="v">${addr ? formatMMM(connectedSnapshot.claimable) : "—"}</span>
+          <span class="v">${addr ? formatClaimMon(connectedSnapshot.claimableMon) : "—"}</span>
         </div>
         <div class="progress"><div style="width:${canClaim ? 100 : 0}%;"></div></div>
       </div>
@@ -534,7 +532,7 @@ function renderConnectedCard() {
 }
 
 /* =========================
-   Watched wallets
+   Watched wallets (FIXED: claimable is MON)
 ========================= */
 function renderWallets() {
   const container = $("walletsContainer");
@@ -543,7 +541,7 @@ function renderWallets() {
 
   wallets.forEach((w) => {
     const isConn = connectedAddress && ethers.getAddress(w.address) === ethers.getAddress(connectedAddress);
-    const canClaim = isConn && Number(w.claimable) > 0;
+    const canClaim = isConn && Number(w.claimableMon || 0) > 0;
 
     const card = document.createElement("div");
     card.className = "wallet-card watched-card";
@@ -576,9 +574,9 @@ function renderWallets() {
         <div>
           <div class="metric" style="margin-bottom:8px;">
             <span class="k">Claimable</span>
-            <span class="v">${formatMMM(w.claimable)}</span>
+            <span class="v">${formatClaimMon(w.claimableMon)}</span>
           </div>
-          <div class="progress"><div style="width:${Number(w.claimable) > 0 ? 100 : 0}%;"></div></div>
+          <div class="progress"><div style="width:${Number(w.claimableMon || 0) > 0 ? 100 : 0}%;"></div></div>
         </div>
 
         <div style="display:grid; grid-template-columns: 1fr 48px; gap:10px; margin-top: 6px;">
@@ -727,7 +725,7 @@ function disconnectWallet(silent = false) {
 
   connectedSnapshot.address = null;
   connectedSnapshot.mmmHoldings = 0;
-  connectedSnapshot.claimable = 0;
+  connectedSnapshot.claimableMon = 0; // FIXED
 
   setHeaderConnectionUI(false);
   renderSendDropdown();
@@ -1012,7 +1010,6 @@ async function executeSwap() {
 
       const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
 
-      // Some RPCs fail estimateGas when state is weird; force gasLimit.
       tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
         minOut,
         path,
