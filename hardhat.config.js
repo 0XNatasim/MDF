@@ -4,11 +4,28 @@ require("@nomicfoundation/hardhat-toolbox");
 module.exports = {
   solidity: {
     compilers: [
-      { version: "0.8.24", settings: { optimizer: { enabled: true, runs: 200 } } }, // MMM
-      { version: "0.6.6",  settings: { optimizer: { enabled: true, runs: 200 } } }, // Uniswap V2 periphery (Router02)
-      { version: "0.5.16", settings: { optimizer: { enabled: true, runs: 200 } } }, // Uniswap V2 core
+      {
+        version: "0.8.24",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true, // ✅ works here
+        },
+      },
+      {
+        version: "0.6.6",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          // ❌ viaIR NOT supported here
+        },
+      },
+      {
+        version: "0.5.16",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          // ❌ viaIR NOT supported here
+        },
+      },
     ],
-    viaIR: true,
   },
 
   networks: {

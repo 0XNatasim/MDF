@@ -23,7 +23,7 @@ const CONFIG = {
   // Swap stack
   wmon:    "0x51C0bb68b65bd84De6518C939CB9Dbe2d6Fa7079",
   factory: "0x8e8a713Be23d9be017d7A5f4D649982B5dD24615",
-  router:  "0x53FE6D2499742779BF2Bd12a23e3c102fAe9fEcA",
+  router:  "0xC3B66EE616286c5e4A0aE6D33238e86104Ec8051",
 
   // Watch list defaults (optional)
   defaultWatch: ["0x22BC7a72000faE48a67520c056C0944d9a675412"],

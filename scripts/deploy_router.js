@@ -34,15 +34,15 @@ async function main() {
   console.log("Factory:", factory);
   console.log("WMON:", wmon);
 
-  // UniswapV2Router02 constructor: (address _factory, address _WETH)
-  const Router = await hre.ethers.getContractFactory("UniswapV2Router02");
+  // Router constructor: (address _factory, address _WETH)
+  const Router = await hre.ethers.getContractFactory("Router");
   const router = await Router.deploy(factory, wmon);
 
   console.log("Deploy tx:", router.deploymentTransaction().hash);
   await router.waitForDeployment();
 
   const routerAddr = await router.getAddress();
-  console.log("UniswapV2Router02 deployed at:", routerAddr);
+  console.log("Router deployed at:", routerAddr);
 
   // sanity checks (Router exposes these public vars)
   console.log("router.factory():", await router.factory());
