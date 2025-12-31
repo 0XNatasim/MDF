@@ -1,4 +1,3 @@
-// scripts\exclude_from_rewards.js
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
@@ -9,6 +8,7 @@ function readJson(p) {
 
 async function main() {
   const net = hre.network.name;
+  const [signer] = await hre.ethers.getSigners();
 
   const mmmPath   = path.join("deployments", `mmm.${net}.json`);
   const pairPath  = path.join("deployments", `pair.${net}.json`);
@@ -22,22 +22,32 @@ async function main() {
   const { pair } = readJson(pairPath);
   const { rewardTracker } = readJson(rtPath);
 
-  console.log("MMM:", mmm);
-  console.log("PAIR:", pair);
+  const dev = signer.address;
+
+  console.log("Network:", net);
+  console.log("MMM:    ", mmm);
+  console.log("PAIR:   ", pair);
   console.log("Tracker:", rewardTracker);
+  console.log("DEV:    ", dev);
 
   const tracker = await hre.ethers.getContractAt(
     "SnapshotRewardTrackerMon",
-    rewardTracker
+    rewardTracker,
+    signer
   );
 
-  console.log("Excluding MMM...");
+  console.log("\nExcluding from rewards:");
+
+  console.log("• MMM");
   await (await tracker.excludeFromRewards(mmm, true)).wait();
 
-  console.log("Excluding PAIR...");
+  console.log("• PAIR");
   await (await tracker.excludeFromRewards(pair, true)).wait();
 
-  console.log("Done.");
+  console.log("• DEV WALLET");
+  await (await tracker.excludeFromRewards(dev, true)).wait();
+
+  console.log("\n✅ All exclusions applied successfully.");
 }
 
 main().catch((e) => {

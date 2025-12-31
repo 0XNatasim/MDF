@@ -84,7 +84,7 @@ let routerWrite = null;
 let wallets = [];
 let actions = [];
 
-let connectedSnapshot = { address: null, mmmHoldings: 0, claimable: 0, decimals: 18 };
+let connectedSnapshot = { address: null, mmmHoldings: 0, claimableMon: 0, decimals: 18 };
 let protocolSnapshot  = {
   taxesMMM: 0,
   trackerMon: 0,
@@ -114,6 +114,8 @@ function fmt(n, d = 6) {
 
 function formatMMM(x) { return `${fmt(Number(x || 0), 6)} MMM`; }
 function formatMon(x) { return `${fmt(Number(x || 0), 6)} MON`; }
+function formatClaimMon(x) { return `${fmt(Number(x || 0), 6)} MON`; }
+
 
 function nowDate() { return new Date().toISOString().split("T")[0]; }
 
@@ -156,7 +158,7 @@ function mkWallet(name, addr) {
     name,
     address: ethers.getAddress(addr),
     mmmHoldings: 0,
-    claimable: 0,
+    claimableMon: 0,
   };
 }
 
@@ -393,21 +395,23 @@ async function refreshAll() {
     for (const w of wallets) {
       const bal = await tokenRead.balanceOf(w.address).catch(() => 0n);
       const claim = await getClaimable(w.address).catch(() => 0n);
+
       w.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
-      w.claimable = Number(ethers.formatUnits(claim, decimals));
-    }
+      w.claimableMon = Number(ethers.formatEther(claim)); // <-- MON
+  }
 
     // Connected snapshot
     if (connectedAddress) {
       const bal = await tokenRead.balanceOf(connectedAddress).catch(() => 0n);
       const claim = await getClaimable(connectedAddress).catch(() => 0n);
+
       connectedSnapshot.address = connectedAddress;
       connectedSnapshot.mmmHoldings = Number(ethers.formatUnits(bal, decimals));
-      connectedSnapshot.claimable = Number(ethers.formatUnits(claim, decimals));
+      connectedSnapshot.claimableMon = Number(ethers.formatEther(claim)); // <-- MON
     } else {
       connectedSnapshot.address = null;
       connectedSnapshot.mmmHoldings = 0;
-      connectedSnapshot.claimable = 0;
+      connectedSnapshot.claimableMon = 0;
     }
 
     protocolSnapshot.lastRefresh = new Date();
