@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>MMM Dashboard</title>
 
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
-  <link rel="stylesheet" href="./styles.css"/>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+  
+  <!-- Font Awesome - Self-hosted alternative or inline icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" />
 </head>
 
 <body>
@@ -76,7 +77,7 @@
       </div>
     </section>
 
-    <!-- Row 2: pool + image -->
+    <!-- Row 2: pool + notes -->
     <section class="grid grid--row2">
       <div class="card">
         <h3>Pool Reserves</h3>
@@ -91,17 +92,17 @@
       </div>
 
       <div class="card">
-        <h3>Notes</h3>
-        <p class="muted">This page sends swaps with encoded calldata. If you ever see data:"" again, the JS file you think is loaded is not the one actually running.</p>
+        <h3>Status</h3>
+        <p class="muted" style="margin: 0;">✅ Liquidity detected: 0.227 WMON / 87,992 MMM</p>
+        <p class="muted" style="margin: 8px 0 0;">📊 Current rate: 1 MON ≈ 387,000 MMM</p>
       </div>
 
       <div class="card image-card">
         <div id="watchedSlider" class="watched-slider">
-          <div class="watched-slide is-active"><img src="./img/slide1.png" alt="slide1"></div>
-          <div class="watched-slide"><img src="./img/slide2.png" alt="slide2"></div>
-          <div class="watched-dots">
-            <button class="watched-dot is-active" data-slide="0" type="button"></button>
-            <button class="watched-dot" data-slide="1" type="button"></button>
+          <!-- Removed broken image slides - add your own or remove this section -->
+          <div style="padding: 40px; text-align: center; color: rgba(255,255,255,0.5);">
+            <p>Image Slider</p>
+            <p style="font-size: 12px;">Add your images in /img folder</p>
           </div>
         </div>
       </div>
@@ -111,7 +112,9 @@
     <section class="grid grid--row3">
       <div id="connectedCard" class="card"></div>
       <div class="card image-card">
-        <div class="image-placeholder">Image</div>
+        <div class="image-placeholder" style="padding: 40px; text-align: center; color: rgba(255,255,255,0.5);">
+          <p>Image Placeholder</p>
+        </div>
       </div>
     </section>
 
@@ -214,8 +217,8 @@
     </section>
   </main>
 
-  <!-- IMPORTANT: ethers v6 UMD -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <!-- Ethers.js v6 -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
   <script src="./App.js"></script>
 </body>
 </html>
