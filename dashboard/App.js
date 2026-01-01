@@ -148,9 +148,27 @@ function formatMon(x) {
   return `${fmt(Number(x || 0), 6)} MON`;
 }
 
-function nowDate() {
-  return new Date().toISOString().split("T")[0];
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+function nowDateTime() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
+
+// keep nowDate() if you still use it elsewhere
+function nowDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function fmtCompact(nStr, decimals = 2) {
+  const n = Number(nStr);
+  if (!Number.isFinite(n)) return String(nStr);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(decimals)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(decimals)}K`;
+  return n.toFixed(decimals);
+}
+
 
 function logInfo(...args) {
   console.log("[MMM]", ...args);
@@ -500,29 +518,40 @@ function renderActions() {
   actions.slice(0, 25).forEach((a) => {
     const tr = document.createElement("tr");
 
-    const amountCell = a.amountText ? escapeHtml(a.amountText) : "—";
-
-    const txOrAddr = a.txHash
+    const linkCell = a.txHash
       ? `<a class="link" target="_blank" rel="noreferrer" href="${CONFIG.explorerBase}/tx/${a.txHash}">
            <span class="mono">${shortAddr(a.txHash)}</span>
          </a>`
-      : (a.address ? `<span class="mono">${shortAddr(a.address)}</span>` : "—");
+      : (a.address
+          ? `<span class="mono">${shortAddr(a.address)}</span>`
+          : "—");
 
     const statusBadge =
       a.status === "Completed"
         ? `<span class="badge badge--good">Completed</span>`
-        : `<span class="badge badge--warn">${escapeHtml(a.status || "Pending")}</span>`;
+        : `<span class="badge badge--warn">${escapeHtml(a.status || "Unknown")}</span>`;
+
+    const monCell = a.amountMon ? escapeHtml(a.amountMon) : "—";
+    const mmmCell = a.amountMmm ? escapeHtml(a.amountMmm) : "—";
+    const quoteCell = a.quote ? escapeHtml(a.quote) : "—";
+
+    // Prefer dateTime, fallback to date
+    const dt = a.dateTime || a.date || "—";
 
     tr.innerHTML = `
       <td>${escapeHtml(a.type || "—")}</td>
-      <td>${amountCell}</td>
-      <td>${txOrAddr}</td>
+      <td>${monCell}</td>
+      <td>${mmmCell}</td>
+      <td>${quoteCell}</td>
+      <td>${linkCell}</td>
       <td>${statusBadge}</td>
-      <td>${escapeHtml(a.date || "—")}</td>
+      <td>${escapeHtml(dt)}</td>
     `;
+
     tbody.appendChild(tr);
   });
 }
+
 
 function updateKPIs() {
   setText("kpiTaxes", formatMMM(protocolSnapshot.taxesMMM));
@@ -750,11 +779,13 @@ async function claimTokens(addr) {
     const rcpt = await tx.wait();
 
     actions.unshift({
-      type: "Claim (MON)",
-      amountText: "—",
-      txHash: rcpt?.hash || tx?.hash,
+      type: "CLAIM",
+      amountMon: "",          // you can fill actual claimed amount later if you read logs
+      amountMmm: "",
+      quote: "Rewards claim",
+      txHash: rcpt.hash,
       status: "Completed",
-      date: nowDate(),
+      dateTime: nowDateTime(),
     });
 
     saveData();
@@ -909,11 +940,13 @@ async function sendTokens() {
     const rcpt = await tx.wait();
 
     actions.unshift({
-      type: "Send MMM",
-      amountText: formatMMM(amount),
-      txHash: rcpt?.hash || tx?.hash,
+      type: "SEND",
+      amountMon: "",
+      amountMmm: `${amount} MMM`,
+      quote: `To ${shortAddr(recipient)}`,
+      txHash: rcpt.hash,
       status: "Completed",
-      date: nowDate(),
+      dateTime: nowDateTime(),
     });
 
     if ($("amountInput")) $("amountInput").value = "";
@@ -1051,13 +1084,22 @@ async function executeSwap() {
 
       const rcpt = await tx.wait();
 
+      const amountMonStr = `${amountIn} MON`;
+      const expectedMmmStr = ethers.formatUnits(out, connectedSnapshot.decimals || 18);
+      const amountMmmStr = `${fmtCompact(expectedMmmStr)} MMM`;
+      const quoteStr = `${amountIn} MON → ~${fmtCompact(expectedMmmStr)} MMM`;
+
       actions.unshift({
         type: "BUY",
-        amountText: `${fmt(amountIn)} MON`,
+        amountMon: amountMonStr,
+        amountMmm: amountMmmStr,
+        quote: quoteStr,
         txHash: rcpt.hash,
         status: "Completed",
-        date: nowDate(),
+        dateTime: nowDateTime(),
       });
+
+
 
       saveData();
       hideLoading();
@@ -1101,12 +1143,19 @@ async function executeSwap() {
 
     const rcpt = await tx.wait();
 
+    const amountMmmStr = `${amountIn} MMM`;
+    const expectedMonStr = ethers.formatEther(out);
+    const amountMonStr = `${Number(expectedMonStr).toFixed(6)} MON`;
+    const quoteStr = `${amountIn} MMM → ~${Number(expectedMonStr).toFixed(6)} MON`;
+
     actions.unshift({
       type: "SELL",
-      amountText: `${fmt(amountIn)} MMM`,
+      amountMon: amountMonStr,
+      amountMmm: amountMmmStr,
+      quote: quoteStr,
       txHash: rcpt.hash,
       status: "Completed",
-      date: nowDate(),
+      dateTime: nowDateTime(),
     });
 
     saveData();
