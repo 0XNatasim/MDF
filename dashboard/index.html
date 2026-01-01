@@ -1,224 +1,287 @@
-<!doctype html>
+<!-- index.html (REPLACEMENT) — reorganized exactly as you specified -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>MMM Dashboard</title>
 
-  <link rel="stylesheet" href="./styles.css" />
-  
-  <!-- Font Awesome - Self-hosted alternative or inline icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link rel="stylesheet" href="./styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 </head>
 
 <body>
-  <!-- Loading overlay -->
-  <div id="loadingOverlay" class="overlay hidden">
-    <div class="overlay-card">
-      <div class="spinner"></div>
-      <div id="loadingText" class="overlay-text">Loading...</div>
-    </div>
-  </div>
+  <div class="bg-grid"></div>
 
+  <!-- Topbar -->
   <header class="topbar">
-    <div class="topbar-left">
+    <div class="container topbar__inner">
       <div class="brand">
-        <div class="brand-dot"></div>
-        <div class="brand-title">MMM Dashboard</div>
+        <div class="brand__mark">MMM</div>
+        <div>
+          <div class="brand__title">MMM Dashboard</div>
+          <div class="brand__subtitle">KPIs = protocol state • connected wallet for actions</div>
+        </div>
       </div>
 
-      <div class="links">
-        <a id="mmmLink" class="link" href="#" target="_blank" rel="noreferrer">MMM</a>
-        <a id="trackerLink" class="link" href="#" target="_blank" rel="noreferrer">Tracker</a>
-        <a id="poolLink" class="link" href="#" target="_blank" rel="noreferrer">Pool</a>
+      <div class="topbar__actions">
+        <button id="refreshBtn" class="btn btn--ghost" type="button">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+
+        <button id="disconnectBtn" class="btn btn--ghost" type="button" disabled>
+          <i class="fas fa-right-from-bracket"></i> Disconnect
+        </button>
+
+        <button id="connectBtn" class="btn btn--secondary" type="button">
+          <i class="fas fa-wallet"></i>
+          <span id="connectLabel">Connect</span>
+        </button>
       </div>
-    </div>
-
-    <div class="topbar-right">
-      <button id="refreshBtn" class="btn btn--ghost" type="button">
-        <i class="fa-solid fa-rotate"></i> Refresh
-      </button>
-
-      <button id="connectBtn" class="btn btn--primary" type="button">
-        <span id="connectLabel">Connect</span>
-      </button>
-
-      <button id="disconnectBtn" class="btn btn--ghost" type="button" disabled>
-        Disconnect
-      </button>
     </div>
   </header>
 
   <main class="container">
-    <!-- KPIs -->
-    <section class="grid grid--kpis">
-      <div class="card kpi">
-        <div class="kpi-title">Taxes Collected (MMM)</div>
-        <div id="kpiTaxes" class="kpi-value">—</div>
-        <div class="kpi-sub">MMM held by MMM token contract</div>
-      </div>
+    <!-- ROW 1 (FULL WIDTH): MMM / Tracker / Pool / Price / Refresh -->
+    <section class="meta">
+      <div class="meta-row">
+        <span class="meta-item">
+          MMM:
+          <a id="mmmLink" class="link" target="_blank" rel="noreferrer"></a>
+        </span>
 
-      <div class="card kpi">
-        <div class="kpi-title">Tracker Balance (MON)</div>
-        <div id="kpiTrackerMon" class="kpi-value">—</div>
-        <div class="kpi-sub">Native MON held by tracker</div>
-      </div>
+        <span class="meta-item">
+          Tracker:
+          <a id="trackerLink" class="link" target="_blank" rel="noreferrer"></a>
+        </span>
 
-      <div class="card kpi">
-        <div class="kpi-title">Price (MMM/MON)</div>
-        <div id="kpiPrice" class="kpi-value kpi-value--small">—</div>
-        <div id="kpiPriceCardText" class="kpi-sub">—</div>
-      </div>
+        <span class="meta-item">
+          Pool:
+          <a id="poolLink" class="link" target="_blank" rel="noreferrer"></a>
+        </span>
 
-      <div class="card kpi">
-        <div class="kpi-title">Last refresh</div>
-        <div id="kpiRefresh" class="kpi-value">—</div>
-        <div class="kpi-sub">Local time</div>
+        <span class="meta-item">
+          Price (MMM/MON):
+          <span id="kpiPrice" class="mono muted">—</span>
+        </span>
+
+        <span class="meta-item">
+          Last refresh:
+          <span id="kpiRefresh" class="mono muted">—</span>
+        </span>
       </div>
     </section>
 
-    <!-- Row 2: pool + notes -->
-    <section class="grid grid--row2">
-      <div class="card">
-        <h3>Pool Reserves</h3>
-        <div class="row">
-          <div class="label">MMM</div>
-          <div id="poolMmmReserves" class="value">—</div>
-        </div>
-        <div class="row">
-          <div class="label">WMON</div>
-          <div id="poolWmonReserves" class="value">—</div>
-        </div>
-      </div>
+    <!-- GRID: left rows 2–4, right slider spans rows 2–4; watched wallets starts UNDER slider -->
+    <section class="dash-grid">
+      <!-- LEFT: rows 2–4 -->
+      <div class="dash-left">
+        <!-- ROW 2 (LEFT): Taxes / Tracker / Network (3 cards) -->
+        <section class="stats stats--3">
+          <div class="stat">
+            <div class="stat__label">Taxes Collected (MMM)</div>
+            <div id="kpiTaxes" class="stat__value">—</div>
+            <div class="stat__meta">MMM held by MMM token contract</div>
+          </div>
 
-      <div class="card">
-        <h3>Status</h3>
-        <p class="muted" style="margin: 0;">✅ Liquidity detected: 0.227 WMON / 87,992 MMM</p>
-        <p class="muted" style="margin: 8px 0 0;">📊 Current rate: 1 MON ≈ 387,000 MMM</p>
-      </div>
+          <div class="stat">
+            <div class="stat__label">Tracker Balance (MON)</div>
+            <div id="kpiTrackerMon" class="stat__value">—</div>
+            <div class="stat__meta">Native MON held by tracker</div>
+          </div>
 
-      <div class="card image-card">
-        <div id="watchedSlider" class="watched-slider">
-          <!-- Removed broken image slides - add your own or remove this section -->
-          <div style="padding: 40px; text-align: center; color: rgba(255,255,255,0.5);">
-            <p>Image Slider</p>
-            <p style="font-size: 12px;">Add your images in /img folder</p>
+          <div class="stat">
+            <div class="stat__label">Network</div>
+            <div class="stat__value">Monad Testnet</div>
+            <div class="stat__meta">ChainId 10143</div>
+          </div>
+        </section>
+
+        <!-- ROW 3 (LEFT): Pool reserves MMM + WMON -->
+        <section class="stats stats--2">
+          <div class="stat">
+            <div class="stat__label">Pool Reserves: MMM</div>
+            <div id="poolMmmReserves" class="stat__value">—</div>
+            <div class="stat__meta">
+              <span id="poolMmmValue">—</span><br>
+              <span id="poolMmmPct">—</span> of pool
+            </div>
+          </div>
+
+          <div class="stat">
+            <div class="stat__label">Pool Reserves: WMON</div>
+            <div id="poolWmonReserves" class="stat__value">—</div>
+            <div class="stat__meta">
+              <span id="poolWmonValue">—</span><br>
+              <span id="poolWmonPct">—</span> of pool
+            </div>
+          </div>
+        </section>
+
+        <!-- Connected wallet card (kept) -->
+        <div id="connectedCard" class="card"></div>
+
+        <!-- ROW 4 (LEFT): Swap + Send -->
+        <div class="ops">
+          <!-- Swap panel -->
+          <div class="panel">
+            <div class="panel__head">
+              <h3>Swap (Router)</h3>
+              <p class="muted">Buy MON→MMM or Sell MMM→MON</p>
+            </div>
+
+            <div class="form">
+              <label class="label">Side</label>
+              <select id="swapSide" class="input">
+                <option value="buy">Buy (MON → MMM)</option>
+                <option value="sell">Sell (MMM → MON)</option>
+              </select>
+
+              <label class="label">Amount in</label>
+              <input id="swapAmountIn" class="input" type="number" step="0.000001" placeholder="0.00"/>
+
+              <label class="label">Slippage</label>
+              <select id="swapSlippage" class="input">
+                <option value="0.5">0.5%</option>
+                <option value="1" selected>1%</option>
+                <option value="3">3%</option>
+                <option value="5">5%</option>
+              </select>
+
+              <div class="quote-row">
+                <span class="muted">Quote:</span>
+                <span id="swapQuoteOut" class="mono">—</span>
+              </div>
+
+              <div class="btn-row">
+                <button id="swapApproveBtn" class="btn btn--ghost" type="button" disabled>
+                  <i class="fas fa-check"></i> Approve MMM
+                </button>
+                <button id="swapExecBtn" class="btn btn--primary" type="button" disabled>
+                  <i class="fas fa-arrow-right-arrow-left"></i> Swap
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Send MMM panel -->
+          <div class="panel">
+            <div class="panel__head">
+              <h3>Send MMM</h3>
+              <p class="muted">Transfers use the connected wallet</p>
+            </div>
+
+            <div class="form">
+              <label class="label">Source</label>
+              <select id="walletSelect" class="input">
+                <option value="">Connect wallet first</option>
+              </select>
+
+              <div class="balance-box">
+                <span class="muted">Available:</span>
+                <span id="availableBalance" class="mono">0 MMM</span>
+              </div>
+
+              <label class="label">Amount (MMM)</label>
+              <input id="amountInput" class="input" type="number" step="0.000001" placeholder="0.00"/>
+
+              <div class="chips">
+                <button class="chip" type="button" data-pct="0.25">25%</button>
+                <button class="chip" type="button" data-pct="0.5">50%</button>
+                <button class="chip" type="button" data-pct="0.75">75%</button>
+                <button class="chip" type="button" data-pct="1">MAX</button>
+              </div>
+
+              <label class="label">Recipient</label>
+              <input id="recipientInput" class="input mono" type="text" placeholder="0x..."/>
+
+              <button id="sendBtn" class="btn btn--secondary btn--block" type="button">
+                <i class="fas fa-paper-plane"></i> Send
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Row 3: Connected + image -->
-    <section class="grid grid--row3">
-      <div id="connectedCard" class="card"></div>
-      <div class="card image-card">
-        <div class="image-placeholder" style="padding: 40px; text-align: center; color: rgba(255,255,255,0.5);">
-          <p>Image Placeholder</p>
-        </div>
-      </div>
-    </section>
+        <!-- Recent actions (LEFT, below ops) -->
+        <section class="section">
+          <div class="section__head">
+            <h2>Recent Actions (local log)</h2>
+            <p>Claims / sends / swaps you executed from this page.</p>
+          </div>
 
-    <!-- Row 4: Swap + Send -->
-    <section class="grid grid--row4">
-      <div class="card">
-        <h3>Swap</h3>
+          <div class="toolbar">
+            <button id="clearLogBtn" class="btn btn--ghost" type="button">
+              <i class="fas fa-broom"></i> Clear log
+            </button>
+            <button id="resetBtn" class="btn btn--ghost" type="button">
+              <i class="fas fa-rotate-left"></i> Reset watched + log
+            </button>
+          </div>
 
-        <div class="row">
-          <div class="label">Side</div>
-          <select id="swapSide" class="select">
-            <option value="BUY">BUY (MON → MMM)</option>
-            <option value="SELL">SELL (MMM → MON)</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <div class="label">Amount In</div>
-          <input id="swapAmountIn" class="input" placeholder="0.01" />
-        </div>
-
-        <div class="row">
-          <div class="label">Slippage %</div>
-          <select id="swapSlippage" class="select">
-            <option value="1">1%</option>
-            <option value="3">3%</option>
-            <option value="5">5%</option>
-            <option value="10">10%</option>
-          </select>
-        </div>
-
-        <div class="row">
-          <div class="label">Quote Out</div>
-          <div id="swapQuoteOut" class="value">—</div>
-        </div>
-
-        <div class="row actions">
-          <button id="swapApproveBtn" class="btn btn--ghost" type="button">Approve</button>
-          <button id="swapExecBtn" class="btn btn--primary" type="button">Execute Swap</button>
-        </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Tx / Address</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="txBody"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
-      <div class="card">
-        <h3>Send MMM</h3>
+      <!-- RIGHT: slider (starts at row2, ends at row4), watched wallets below -->
+      <aside class="dash-right">
+        <!-- NFT Slider (higher) -->
+        <div id="watchedSlider" class="watched-slider card">
+          <img class="watched-slide is-active" src="./MMM1.png" alt="MMM 1"/>
+          <img class="watched-slide" src="./MMM2.png" alt="MMM 2"/>
 
-        <div class="row">
-          <div class="label">From</div>
-          <select id="walletSelect" class="select"></select>
+          <div class="watched-dots">
+            <button class="watched-dot is-active" type="button" data-slide="0" aria-label="Slide 1"></button>
+            <button class="watched-dot" type="button" data-slide="1" aria-label="Slide 2"></button>
+          </div>
         </div>
 
-        <div class="row">
-          <div class="label">Amount</div>
-          <input id="amountInput" class="input" placeholder="1000" />
-        </div>
+        <!-- Watched wallets (UNDER slider) -->
+        <div class="panel">
+          <div class="panel__head panel__head--row">
+            <div>
+              <h3>Watched Wallets</h3>
+              <p class="muted">These do not affect KPIs.</p>
+            </div>
 
-        <div class="chips">
-          <button class="chip" data-pct="0.25" type="button">25%</button>
-          <button class="chip" data-pct="0.5" type="button">50%</button>
-          <button class="chip" data-pct="0.75" type="button">75%</button>
-          <button class="chip" data-pct="1" type="button">100%</button>
-        </div>
+            <div class="panel__actions">
+              <button id="watchConnectedBtn" class="btn btn--ghost" type="button">
+                <i class="fas fa-thumbtack"></i>
+              </button>
+              <button id="addWatchBtn" class="btn btn--ghost" type="button">
+                <i class="fas fa-plus"></i>
+              </button>
+            </div>
+          </div>
 
-        <div class="row">
-          <div class="label">Recipient</div>
-          <input id="recipientInput" class="input" placeholder="0x..." />
+          <div id="walletsContainer" class="watched-list"></div>
         </div>
-
-        <div class="row actions">
-          <button id="sendBtn" class="btn btn--primary" type="button">Send</button>
-        </div>
-
-        <div class="muted" id="availableBalance"></div>
-      </div>
-    </section>
-
-    <!-- Watched + logs -->
-    <section class="grid grid--row5">
-      <div class="card">
-        <h3>Watched Wallets</h3>
-        <div class="row actions">
-          <button id="addWatchBtn" class="btn btn--ghost" type="button">Add</button>
-          <button id="watchConnectedBtn" class="btn btn--ghost" type="button">Watch Connected</button>
-          <button id="resetBtn" class="btn btn--ghost" type="button">Reset</button>
-        </div>
-        <div id="walletsContainer" class="wallets"></div>
-      </div>
-
-      <div class="card">
-        <h3>Activity</h3>
-        <div class="row actions">
-          <button id="clearLogBtn" class="btn btn--ghost" type="button">Clear</button>
-        </div>
-        <table class="table">
-          <thead>
-            <tr><th>Type</th><th>Tx</th><th>Status</th><th>Date</th></tr>
-          </thead>
-          <tbody id="txBody"></tbody>
-        </table>
-      </div>
+      </aside>
     </section>
   </main>
 
-  <!-- Ethers.js v6 -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading hidden">
+    <div class="loading__card">
+      <div class="spinner"></div>
+      <div id="loadingText" class="loading__text">Processing…</div>
+    </div>
+  </div>
+
   <script src="./App.js"></script>
 </body>
 </html>
+  <!-- v3 ??? -->
