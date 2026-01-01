@@ -1,161 +1,209 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MMM Dashboard — Monad Testnet</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MMM Dashboard</title>
 
-  <link rel="stylesheet" href="./styles.css?v=9" />
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
 </head>
 
 <body>
-  <!-- Top bar -->
+  <!-- Loading overlay -->
+  <div id="loadingOverlay" class="overlay hidden">
+    <div class="overlay-card">
+      <div class="spinner"></div>
+      <div id="loadingText" class="overlay-text">Loading...</div>
+    </div>
+  </div>
+
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand">
         <div class="brand-dot"></div>
-        <div>
-          <div class="brand-title">MMM Dashboard</div>
-          <div class="brand-sub">Monad Testnet</div>
-        </div>
+        <div class="brand-title">MMM Dashboard</div>
+      </div>
+
+      <div class="links">
+        <a id="mmmLink" class="link" href="#" target="_blank" rel="noreferrer">MMM</a>
+        <a id="trackerLink" class="link" href="#" target="_blank" rel="noreferrer">Tracker</a>
+        <a id="poolLink" class="link" href="#" target="_blank" rel="noreferrer">Pool</a>
       </div>
     </div>
 
     <div class="topbar-right">
-      <button class="btn btn--ghost" id="refreshBtn" type="button">
+      <button id="refreshBtn" class="btn btn--ghost" type="button">
         <i class="fa-solid fa-rotate"></i> Refresh
       </button>
 
-      <button class="btn btn--primary" id="connectBtn" type="button">
-        <i class="fa-solid fa-wallet"></i> <span id="connectLabel">Connect</span>
+      <button id="connectBtn" class="btn btn--primary" type="button">
+        <span id="connectLabel">Connect</span>
       </button>
 
-      <button class="btn btn--ghost" id="disconnectBtn" type="button" disabled>
-        <i class="fa-solid fa-plug-circle-xmark"></i> Disconnect
+      <button id="disconnectBtn" class="btn btn--ghost" type="button" disabled>
+        Disconnect
       </button>
     </div>
   </header>
 
-  <!-- Loading overlay -->
-  <div class="overlay hidden" id="loadingOverlay">
-    <div class="overlay-card">
-      <div class="spinner"></div>
-      <div id="loadingText">Loading...</div>
-    </div>
-  </div>
-
   <main class="container">
     <!-- KPIs -->
-    <section class="grid kpi-grid">
-      <div class="card">
-        <div class="card-h">Taxes Collected (MMM)</div>
-        <div class="card-v" id="kpiTaxes">—</div>
-        <div class="card-s">MMM held by MMM token contract</div>
+    <section class="grid grid--kpis">
+      <div class="card kpi">
+        <div class="kpi-title">Taxes Collected (MMM)</div>
+        <div id="kpiTaxes" class="kpi-value">—</div>
+        <div class="kpi-sub">MMM held by MMM token contract</div>
       </div>
 
-      <div class="card">
-        <div class="card-h">Tracker Balance (MON)</div>
-        <div class="card-v" id="kpiTrackerMon">—</div>
-        <div class="card-s">Native MON held by tracker</div>
+      <div class="card kpi">
+        <div class="kpi-title">Tracker Balance (MON)</div>
+        <div id="kpiTrackerMon" class="kpi-value">—</div>
+        <div class="kpi-sub">Native MON held by tracker</div>
       </div>
 
-      <div class="card">
-        <div class="card-h">Price (MMM/MON)</div>
-        <div class="card-v" id="kpiPriceCardText">—</div>
-        <div class="card-s">From pool reserves</div>
+      <div class="card kpi">
+        <div class="kpi-title">Price (MMM/MON)</div>
+        <div id="kpiPrice" class="kpi-value kpi-value--small">—</div>
+        <div id="kpiPriceCardText" class="kpi-sub">—</div>
       </div>
 
-      <div class="card">
-        <div class="card-h">Last refresh</div>
-        <div class="card-v" id="kpiRefresh">—</div>
-        <div class="card-s">Local time</div>
+      <div class="card kpi">
+        <div class="kpi-title">Last refresh</div>
+        <div id="kpiRefresh" class="kpi-value">—</div>
+        <div class="kpi-sub">Local time</div>
       </div>
     </section>
 
-    <!-- Contract links -->
-    <section class="grid two-col">
+    <!-- Row 2: pool + image -->
+    <section class="grid grid--row2">
       <div class="card">
-        <div class="card-h">Contracts</div>
-        <div class="mono small">
-          MMM: <a class="link" id="mmmLink" target="_blank" rel="noreferrer" href="#">—</a><br/>
-          Tracker: <a class="link" id="trackerLink" target="_blank" rel="noreferrer" href="#">—</a><br/>
-          Pool: <a class="link" id="poolLink" target="_blank" rel="noreferrer" href="#">—</a>
+        <h3>Pool Reserves</h3>
+        <div class="row">
+          <div class="label">MMM</div>
+          <div id="poolMmmReserves" class="value">—</div>
+        </div>
+        <div class="row">
+          <div class="label">WMON</div>
+          <div id="poolWmonReserves" class="value">—</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-h">Pool Reserves</div>
-        <div class="grid two-col small">
-          <div>
-            <div class="muted">Pool Reserves: MMM</div>
-            <div class="mono" id="poolMmmReserves">—</div>
-          </div>
-          <div>
-            <div class="muted">Pool Reserves: WMON</div>
-            <div class="mono" id="poolWmonReserves">—</div>
+        <h3>Notes</h3>
+        <p class="muted">This page sends swaps with encoded calldata. If you ever see data:"" again, the JS file you think is loaded is not the one actually running.</p>
+      </div>
+
+      <div class="card image-card">
+        <div id="watchedSlider" class="watched-slider">
+          <div class="watched-slide is-active"><img src="./img/slide1.png" alt="slide1"></div>
+          <div class="watched-slide"><img src="./img/slide2.png" alt="slide2"></div>
+          <div class="watched-dots">
+            <button class="watched-dot is-active" data-slide="0" type="button"></button>
+            <button class="watched-dot" data-slide="1" type="button"></button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Connected wallet card -->
-    <section class="card" id="connectedCard"></section>
+    <!-- Row 3: Connected + image -->
+    <section class="grid grid--row3">
+      <div id="connectedCard" class="card"></div>
+      <div class="card image-card">
+        <div class="image-placeholder">Image</div>
+      </div>
+    </section>
 
-    <!-- Swap -->
-    <section class="card">
-      <div class="card-h">Swap</div>
+    <!-- Row 4: Swap + Send -->
+    <section class="grid grid--row4">
+      <div class="card">
+        <h3>Swap</h3>
 
-      <div class="grid swap-grid">
-        <div>
-          <label class="lbl">Side</label>
-          <select id="swapSide" class="input">
+        <div class="row">
+          <div class="label">Side</div>
+          <select id="swapSide" class="select">
             <option value="BUY">BUY (MON → MMM)</option>
             <option value="SELL">SELL (MMM → MON)</option>
           </select>
         </div>
 
-        <div>
-          <label class="lbl">Amount In</label>
+        <div class="row">
+          <div class="label">Amount In</div>
           <input id="swapAmountIn" class="input" placeholder="0.01" />
         </div>
 
-        <div>
-          <label class="lbl">Slippage %</label>
-          <input id="swapSlippage" class="input" value="1" />
+        <div class="row">
+          <div class="label">Slippage %</div>
+          <select id="swapSlippage" class="select">
+            <option value="1">1%</option>
+            <option value="3">3%</option>
+            <option value="5">5%</option>
+            <option value="10">10%</option>
+          </select>
         </div>
 
-        <div>
-          <label class="lbl">Quote Out</label>
-          <div class="input input--readonly" id="swapQuoteOut">—</div>
+        <div class="row">
+          <div class="label">Quote Out</div>
+          <div id="swapQuoteOut" class="value">—</div>
+        </div>
+
+        <div class="row actions">
+          <button id="swapApproveBtn" class="btn btn--ghost" type="button">Approve</button>
+          <button id="swapExecBtn" class="btn btn--primary" type="button">Execute Swap</button>
         </div>
       </div>
 
-      <div class="swap-actions">
-        <button class="btn btn--ghost" id="swapApproveBtn" type="button">
-          <i class="fa-solid fa-check"></i> Approve MMM
-        </button>
+      <div class="card">
+        <h3>Send MMM</h3>
 
-        <button class="btn btn--primary" id="swapExecBtn" type="button">
-          <i class="fa-solid fa-right-left"></i> Execute Swap
-        </button>
-      </div>
+        <div class="row">
+          <div class="label">From</div>
+          <select id="walletSelect" class="select"></select>
+        </div>
 
-      <div class="muted small" style="margin-top:10px;">
-        If a swap fails, open DevTools console and confirm the tx “to” address matches the NEW router.
+        <div class="row">
+          <div class="label">Amount</div>
+          <input id="amountInput" class="input" placeholder="1000" />
+        </div>
+
+        <div class="chips">
+          <button class="chip" data-pct="0.25" type="button">25%</button>
+          <button class="chip" data-pct="0.5" type="button">50%</button>
+          <button class="chip" data-pct="0.75" type="button">75%</button>
+          <button class="chip" data-pct="1" type="button">100%</button>
+        </div>
+
+        <div class="row">
+          <div class="label">Recipient</div>
+          <input id="recipientInput" class="input" placeholder="0x..." />
+        </div>
+
+        <div class="row actions">
+          <button id="sendBtn" class="btn btn--primary" type="button">Send</button>
+        </div>
+
+        <div class="muted" id="availableBalance"></div>
       </div>
     </section>
 
-    <!-- Minimal watched + log sections (kept, but optional) -->
-    <section class="card">
-      <div class="card-h">Watched Wallets</div>
-      <div id="walletsContainer" class="grid three-col"></div>
-    </section>
+    <!-- Watched + logs -->
+    <section class="grid grid--row5">
+      <div class="card">
+        <h3>Watched Wallets</h3>
+        <div class="row actions">
+          <button id="addWatchBtn" class="btn btn--ghost" type="button">Add</button>
+          <button id="watchConnectedBtn" class="btn btn--ghost" type="button">Watch Connected</button>
+          <button id="resetBtn" class="btn btn--ghost" type="button">Reset</button>
+        </div>
+        <div id="walletsContainer" class="wallets"></div>
+      </div>
 
-    <section class="card">
-      <div class="card-h">Activity</div>
-      <div class="table-wrap">
+      <div class="card">
+        <h3>Activity</h3>
+        <div class="row actions">
+          <button id="clearLogBtn" class="btn btn--ghost" type="button">Clear</button>
+        </div>
         <table class="table">
           <thead>
             <tr><th>Type</th><th>Tx</th><th>Status</th><th>Date</th></tr>
@@ -166,10 +214,8 @@
     </section>
   </main>
 
-  <!-- Ethers (REQUIRED) -->
+  <!-- IMPORTANT: ethers v6 UMD -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
-
-  <!-- Your app logic (cache-busted) -->
-  <script src="./App.js?v=9"></script>
+  <script src="./App.js"></script>
 </body>
 </html>
