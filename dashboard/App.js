@@ -1084,10 +1084,18 @@ async function executeSwap() {
 
       const rcpt = await tx.wait();
 
-      const amountMonStr = `${amountIn} MON`;
-      const expectedMmmStr = ethers.formatUnits(out, connectedSnapshot.decimals || 18);
-      const amountMmmStr = `${fmtCompact(expectedMmmStr)} MMM`;
-      const quoteStr = `${amountIn} MON → ~${fmtCompact(expectedMmmStr)} MMM`;
+      const amountMonIn = Number(amountIn); // user input (e.g. 0.05)
+      const outMmmHuman = Number(ethers.formatUnits(out, connectedSnapshot.decimals || 18));
+
+      const pricePaidMonPerMmm = outMmmHuman > 0 ? (amountMonIn / outMmmHuman) : 0;
+
+      // cells
+      const amountMonStr = `${amountMonIn} MON`;
+      const amountMmmStr = `${fmtCompact(outMmmHuman)} MMM`;
+
+      // quote column will now show: 0.0000235377 (MON/MMM)
+      const quoteStr = `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`;
+
 
       actions.unshift({
         type: "BUY",
@@ -1098,7 +1106,6 @@ async function executeSwap() {
         status: "Completed",
         dateTime: nowDateTime(),
       });
-
 
 
       saveData();
@@ -1143,19 +1150,22 @@ async function executeSwap() {
 
     const rcpt = await tx.wait();
 
-    const amountMmmStr = `${amountIn} MMM`;
-    const expectedMonStr = ethers.formatEther(out);
-    const amountMonStr = `${Number(expectedMonStr).toFixed(6)} MON`;
-    const quoteStr = `${amountIn} MMM → ~${Number(expectedMonStr).toFixed(6)} MON`;
+    const amountMmmIn = Number(amountIn);
+    const outMonHuman = Number(ethers.formatEther(out));
+    const pricePaidMonPerMmm = amountMmmIn > 0 ? (outMonHuman / amountMmmIn) : 0;
+
+    const amountMmmStr = `${amountMmmIn} MMM`;
+    const amountMonStr = `${outMonHuman.toFixed(6)} MON`;
+    const quoteStr = fmtTiny(pricePaidMonPerMmm, 10); // << unit price
 
     actions.unshift({
-      type: "SELL",
-      amountMon: amountMonStr,
-      amountMmm: amountMmmStr,
-      quote: quoteStr,
-      txHash: rcpt.hash,
-      status: "Completed",
-      dateTime: nowDateTime(),
+     type: "SELL",
+     amountMon: amountMonStr,
+     amountMmm: amountMmmStr,
+     quote: quoteStr,
+     txHash: rcpt.hash,
+     status: "Completed",
+     dateTime: nowDateTime(),
     });
 
     saveData();
@@ -1311,3 +1321,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (_) {}
   }
 });
+
+function fmtTiny(x, decimals = 10) {
+  const n = Number(x);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  // show more precision for tiny numbers, but trim trailing zeros
+  return n.toFixed(decimals).replace(/\.?0+$/, "");
+}
