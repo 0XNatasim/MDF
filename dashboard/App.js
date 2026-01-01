@@ -112,39 +112,6 @@ let protocolSnapshot = {
   lastRefresh: null,
 };
 
-function closeAllMenus() {
-  $("walletDropdown")?.classList.add("hidden");
-  $("hamburgerDropdown")?.classList.add("hidden");
-  $("walletBtn")?.setAttribute("aria-expanded", "false");
-  $("hamburgerBtn")?.setAttribute("aria-expanded", "false");
-}
-
-function toggleWalletDropdown() {
-  const dd = $("walletDropdown");
-  const btn = $("walletBtn");
-  if (!dd || !btn) return;
-
-  // close other menu first
-  $("hamburgerDropdown")?.classList.add("hidden");
-  $("hamburgerBtn")?.setAttribute("aria-expanded", "false");
-
-  dd.classList.toggle("hidden");
-  btn.setAttribute("aria-expanded", dd.classList.contains("hidden") ? "false" : "true");
-}
-
-function toggleHamburgerDropdown() {
-  const dd = $("hamburgerDropdown");
-  const btn = $("hamburgerBtn");
-  if (!dd || !btn) return;
-
-  // close other menu first
-  $("walletDropdown")?.classList.add("hidden");
-  $("walletBtn")?.setAttribute("aria-expanded", "false");
-
-  dd.classList.toggle("hidden");
-  btn.setAttribute("aria-expanded", dd.classList.contains("hidden") ? "false" : "true");
-}
-
 /* =========================
    DOM helpers
 ========================= */
@@ -370,69 +337,18 @@ async function quoteMmmPerMon(mmmDecimals) {
    UI binding
 ========================= */
 function setHeaderConnectionUI(isConnected) {
+  const dis = $("disconnectBtn");
+  if (dis) dis.disabled = !isConnected;
+
   const label = $("connectLabel");
-  const dot = $("walletDot");
-
-  if (label) {
-    label.textContent = isConnected && connectedAddress ? shortAddr(connectedAddress) : "Connect";
-  }
-
-  if (dot) {
-    dot.classList.toggle("is-on", Boolean(isConnected && connectedAddress));
-  }
-
-  // Update Monadscan menu link to the connected address when available
-  const monadscan = $("monadscanMenuLink");
-  if (monadscan) {
-    monadscan.href = isConnected && connectedAddress
-      ? `${CONFIG.explorerBase}/address/${connectedAddress}`
-      : `${CONFIG.explorerBase}`;
-  }
-
-  // Collapse dropdown state when disconnected
-  if (!isConnected) closeAllMenus();
+  if (label) label.textContent = isConnected && connectedAddress ? shortAddr(connectedAddress) : "Connect";
 }
 
-
 function bindUI() {
-  // Header
-$("refreshBtn")?.addEventListener("click", refreshAll);
-
-// Wallet pill: if disconnected => connect. if connected => dropdown.
-$("walletBtn")?.addEventListener("click", () => {
-  if (!connectedAddress) return connectWallet(false);
-  toggleWalletDropdown();
-});
-
-$("copyAddrBtn")?.addEventListener("click", async () => {
-  if (!connectedAddress) return;
-  await copyText(connectedAddress);
-  closeAllMenus();
-});
-
-$("disconnectMenuBtn")?.addEventListener("click", () => {
-  disconnectWallet(false);
-  closeAllMenus();
-});
-
-// Hamburger
-$("hamburgerBtn")?.addEventListener("click", () => {
-  toggleHamburgerDropdown();
-});
-
-// Close menus on outside click / Esc
-document.addEventListener("click", (e) => {
-  const walletMenu = $("walletDropdown")?.parentElement;
-  const burgerMenu = $("hamburgerDropdown")?.parentElement;
-  if (walletMenu && walletMenu.contains(e.target)) return;
-  if (burgerMenu && burgerMenu.contains(e.target)) return;
-  closeAllMenus();
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeAllMenus();
-});
-
+  // topbar
+  $("connectBtn")?.addEventListener("click", () => connectWallet(false));
+  $("disconnectBtn")?.addEventListener("click", () => disconnectWallet());
+  $("refreshBtn")?.addEventListener("click", refreshAll);
 
   // watched mgmt
   $("addWatchBtn")?.addEventListener("click", promptAddWatch);
