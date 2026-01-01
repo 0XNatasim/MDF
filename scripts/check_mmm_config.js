@@ -32,7 +32,7 @@ async function main() {
 
   // If router supports factory/WETH, print them
   try {
-    const r = await hre.ethers.getContractAt("PatchedV2Router02", patchedRouter);
+    const r = await hre.ethers.getContractAt("Router", patchedRouter);
     console.log("patched.router.factory():", await r.factory());
     console.log("patched.router.WETH():", await r.WETH());
   } catch (e) {
