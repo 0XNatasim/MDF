@@ -1,337 +1,970 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MMM — v1 Roadmap + Mainnet Launch Runbook</title>
-  <meta name="description" content="MMM (Monad Money Machine) v1 roadmap, locked deployment pipeline, and Monad mainnet launch checklist." />
-  <link rel="stylesheet" href="./styles.css" />
-</head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MMM — Monad Money Machine</title>
+    <meta name="description" content="MMM — Monad Money Machine. DEX-native launch, MON rewards via snapshot tracker, anti-abuse exclusions, roadmap for advanced anti-gaming and optional NFT reward multipliers." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .phase-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+      }
+      .phase-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        transition: transform 0.2s ease;
+      }
+      .phase-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--accent-primary);
+      }
+      .phase-card h4 {
+        color: var(--text-primary);
+        margin-bottom: 0.75rem;
+        font-size: 1.1rem;
+      }
+      .tier-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .tier-diamond { background: linear-gradient(135deg, #60a5fa, #3b82f6); }
+      .tier-normal { background: linear-gradient(135deg, #34d399, #10b981); }
+      .tier-active { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+      .tier-gamer { background: linear-gradient(135deg, #f87171, #ef4444); }
+      .detection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1.5rem 0;
+      }
+      .detection-item {
+        background: var(--bg-secondary);
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid var(--accent-primary);
+      }
 
-<body>
-  <header class="hero">
-    <div class="container">
-      <div class="hero__top">
-        <div>
-          <h1>MMM — v1 Roadmap + Mainnet Launch Runbook</h1>
-          <p class="muted">
-            This page is the single source of truth for MMM v1: contracts, locked deployment pipeline, and the exact steps to go from testnet → mainnet.
-          </p>
+      /* Simple status pills */
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-color);
+        font-size: 0.85rem;
+        font-weight: 600;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        margin-top: 0.75rem;
+      }
+      .status-pill b { font-weight: 700; }
+      
+      /* Tokenomics specific styles */
+      .allocation-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+        margin: 1.5rem 0;
+      }
+      .allocation-item {
+        background: var(--bg-secondary);
+        padding: 1.25rem;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+      }
+      .allocation-item:hover {
+        transform: translateY(-2px);
+        border-color: var(--accent-primary);
+      }
+      .allocation-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .allocation-percentage {
+        font-weight: 800;
+        font-size: 1.5rem;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .distribution-flow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 2rem 0;
+        padding: 1.5rem;
+        background: rgba(255,255,255,0.04);
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+      }
+      .flow-arrow {
+        margin: 1rem 0;
+        color: var(--primary);
+        font-size: 1.5rem;
+      }
+      .tax-breakdown {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+      }
+      .tax-item {
+        text-align: center;
+        padding: 1rem;
+        min-width: 120px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid var(--border-color);
+      }
+      .tax-rate {
+        font-size: 1.8rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="container topbar__inner">
+        <div class="brand">
+          <div class="brand__mark">MMM</div>
+          <div class="brand__text">
+            <div class="brand__title">Monad Money Machine</div>
+            <div class="brand__subtitle">Stealth DEX • Snapshot MON Rewards</div>
+          </div>
         </div>
 
-        <div class="hero__meta">
-          <div class="pill">Token: <strong>MMM</strong></div>
-          <div class="pill">Supply: <strong>1,000,000,000</strong> (18 decimals)</div>
-          <div class="pill">Design: <strong>TaxVault → RewardVault</strong> distribution</div>
-        </div>
+        <button class="nav__toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+
+        <nav class="nav" id="nav">
+          <a href="#overview" class="nav__link">Overview</a>
+          <a href="#token" class="nav__link">Token</a>
+          <a href="#tax" class="nav__link">Taxes</a>
+          <a href="#rewards" class="nav__link">Rewards</a>
+          <a href="#anti" class="nav__link">Anti-Abuse</a>
+          <a href="#advanced-gaming" class="nav__link">Anti-Gaming</a>
+          <a href="#nfts" class="nav__link">NFTs</a>
+          <a href="#liquid-staking" class="nav__link">Liquid Staking</a>
+          <a href="#tokenomics" class="nav__link">Tokenomics</a>
+          <a href="#launch" class="nav__link">Launch</a>
+          <a href="#next" class="nav__link">Next Steps</a>
+          <a
+            href="https://mdf-j931.onrender.com/"
+            class="nav__link nav__link--cta"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Buy Here
+          </a>
+        
+          
+        </nav>
       </div>
+    </header>
 
-      <div class="notice notice--tight">
-        <div class="notice__title">Non-negotiable v1 rule (locked)</div>
-        <p>
-          <strong>Eligible supply</strong> is defined as:
-          <code>totalSupply() − Σ balanceOf(excludedRewardAddresses)</code>.
-          No holder enumeration. Exclusions are admin-managed and aligned by policy.
-        </p>
-      </div>
-    </div>
-  </header>
+    <main>
+      <!-- HERO -->
+      <section class="hero" id="overview">
+        <div class="container hero__inner">
+          <div class="hero__copy">
+            <p class="pill">DEX-Native • Yield-First • Mechanically Honest</p>
+            <h1>MMM is not a meme.<br/>It is a yield machine.</h1>
+            <p class="lead">
+              A MON-rewards token on Monad designed for sustainable holding incentives,
+              anti-abuse exclusions, and a clean stealth AMM launch.
+            </p>
 
-  <main>
-    <!-- v1 STATUS -->
-    <section class="section" id="status">
-      <div class="container">
-        <div class="section__head">
-          <h2>v1 Status Snapshot</h2>
-          <p>What is done, what is locked, what remains before mainnet launch.</p>
-        </div>
-
-        <div class="grid grid--3">
-          <article class="panel">
-            <h3>Contracts (v1)</h3>
-            <ul class="checklist">
-              <li class="done">MMMToken (tax logic + wiring)</li>
-              <li class="done">TaxVault (custody MMM taxes; RewardVault-only sweep)</li>
-              <li class="done">RewardVault (snapshot-style accounting; claim gating)</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--done">Implemented</span>
-              <span class="badge badge--done">Live-tested</span>
+            <div class="hero__stats">
+              <div class="stat">
+                <div class="stat__label">Total Supply</div>
+                <div class="stat__value">1,000,000,000 MMM</div>
+              </div>
+              <div class="stat">
+                <div class="stat__label">Reward Asset</div>
+                <div class="stat__value">MON</div>
+              </div>
+              <div class="stat">
+                <div class="stat__label">Launch Model</div>
+                <div class="stat__value">Stealth DEX</div>
+              </div>
             </div>
-          </article>
 
-          <article class="panel">
-            <h3>Locked Pipeline</h3>
-            <ul class="checklist">
-              <li class="done">deploy-v1-locked (writes deployments/&lt;net&gt;/latest.json)</li>
-              <li class="done">preflight-from-manifest (reads manifest; enforces wiring)</li>
-              <li class="done">assert-manifest (structure + chainId + code checks)</li>
-              <li class="done">stamp-manifest (pins bytecode hashes + git commit)</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--done">Locked</span>
-              <span class="badge badge--done">Deterministic</span>
+            <div class="hero__actions">
+              <a class="btn btn--primary" href="#tokenomics">Tokenomics</a>
+              <a class="btn btn--secondary" href="#launch">Launch Model</a>
+              <a class="btn btn--ghost" href="#rewards">Rewards System</a>
             </div>
-          </article>
+          </div>
 
-          <article class="panel">
-            <h3>Mainnet External Dependencies</h3>
-            <ul class="checklist">
-              <li class="todo">Create Uniswap V2 pair (MMM / WMON)</li>
-              <li class="todo">Add liquidity (seed LP) + verify trading path</li>
-              <li class="todo">Router enforcement (required on mainnet)</li>
-              <li class="todo">Ownership handoff + LP lock + operational monitoring</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--warn">Pending</span>
-              <span class="badge badge--warn">Operational</span>
+          <div class="hero__card">
+            <div class="card">
+              <div class="card__header">
+                <h2>Design Rules (Non-Negotiable)</h2>
+                <p>These are the guardrails that shape everything.</p>
+              </div>
+              <ul class="checklist">
+                <li>DEX-native only (no custody, no CEX dependency)</li>
+                <li>No bonding curve, no migration cliff</li>
+                <li>Taxes active from block 1</li>
+                <li>Rewards paid in MON (external value)</li>
+                <li>Snapshot-based reward accounting (no reflections)</li>
+                <li>Excluded wallets do not earn (Pair, token contract, etc.)</li>
+                <li>Roadmap: behavioral anti-gaming + optional NFT reward multipliers</li>
+              </ul>
+
+              <div class="status-pill"><b>Status:</b> Core tax → swapback → MON rewards is deployed and tested</div>
             </div>
-          </article>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ARCHITECTURE -->
-    <section class="section" id="architecture">
-      <div class="container">
-        <div class="section__head">
-          <h2>v1 Architecture (Current Reality)</h2>
-          <p>Concise: what exists on-chain today and how funds flow.</p>
+      <!-- TOKEN FUNDAMENTALS -->
+      <section class="section" id="token">
+        <div class="container">
+          <div class="section__head">
+            <h2>Token Fundamentals</h2>
+            <p>Fixed supply, no inflation, no gimmicks.</p>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Supply</h3>
+              <ul class="bullets">
+                <li><strong>Total:</strong> 1,000,000,000 MMM</li>
+                <li>Minted once at deployment</li>
+                <li>No mint function after launch</li>
+                <li>No rebasing, no inflation</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>Chain & Market</h3>
+              <ul class="bullets">
+                <li><strong>Chain:</strong> Monad</li>
+                <li><strong>Pair:</strong> MMM / WMON</li>
+                <li><strong>DEX:</strong> Uniswap-style AMM</li>
+                <li>Price discovery is purely market-driven</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">Explicitly Not Included</div>
+            <p>
+              Centralized exchanges, bonding curves, migration events, hidden minting,
+              rebases, emissions, or post-launch supply changes.
+              MMM is deployed once and trades only on DEX liquidity.
+            </p>
+          </div>
         </div>
+      </section>
 
-        <div class="grid grid--2">
-          <article class="panel">
-            <h3>Tax Flow</h3>
+      <!-- TAX ARCHITECTURE -->
+      <section class="section" id="tax">
+        <div class="container">
+          <div class="section__head">
+            <h2>Tax Architecture</h2>
+            <p>Taxes are a funding rail for MON rewards — not a gimmick.</p>
+          </div>
+
+          <div class="grid grid--3">
+            <article class="panel">
+              <h3>Scope</h3>
+              <ul class="bullets">
+                <li>Buy tax: Yes (5%)</li>
+                <li>Sell tax: Yes (5%)</li>
+                <li>Transfer tax: No</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented (rates are parameter decisions)</div>
+            </article>
+
+            <article class="panel">
+              <h3>Flow</h3>
+              <ol class="steps">
+                <li>Tax collected in MMM</li>
+                <li>MMM accumulates in token contract (<code>taxTokens</code>)</li>
+                <li>Swap MMM → MON using router (batch execution)</li>
+                <li>Send MON to Reward Tracker</li>
+                <li>Holders claim MON from the tracker</li>
+              </ol>
+              <div class="status-pill"><b>Status:</b> Implemented & tested end-to-end</div>
+            </article>
+
+            <article class="panel">
+              <h3>Why Batch Swaps</h3>
+              <ul class="bullets">
+                <li>Clear yield accounting (each swap is auditable)</li>
+                <li>Less noisy than reflections</li>
+                <li>Better anti-gaming control surfaces (you choose cadence/thresholds)</li>
+                <li>More predictable operations</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- REWARDS SYSTEM -->
+      <section class="section" id="rewards">
+        <div class="container">
+          <div class="section__head">
+            <h2>Rewards System</h2>
+            <p>Real MON rewards, distributed by on-chain snapshot accounting — not reflections.</p>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>How Rewards Are Generated</h3>
+              <ol class="steps">
+                <li>Buy & sell taxes are collected in MMM</li>
+                <li>MMM accumulates inside the token contract (<code>taxTokens</code>)</li>
+                <li><code>swapTaxForRewards()</code> swaps MMM → MON (batch)</li>
+                <li>MON is transferred to the Reward Tracker</li>
+              </ol>
+              <div class="status-pill"><b>Status:</b> Implemented & tested</div>
+            </article>
+
+            <article class="panel">
+              <h3>How Rewards Are Distributed</h3>
+              <ol class="steps">
+                <li>Tracker maintains an eligible supply (excludes specific addresses)</li>
+                <li>Each MON deposit updates a global reward index (<code>rewardPerTokenStored</code>)</li>
+                <li>Each wallet earns proportional to eligible MMM balance at reward time</li>
+                <li>Rewards become claimable after the wallet is checkpointed (transfer/claim)</li>
+              </ol>
+              <div class="status-pill"><b>Status:</b> Implemented & tested</div>
+            </article>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Snapshot-Based Accounting</h3>
+              <ul class="bullets">
+                <li>No reflections on every transfer</li>
+                <li>Passive holders do not pay constant gas</li>
+                <li>Rewards accrue against a global index</li>
+                <li>Balances are checkpointed on transfers</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>Anti-Abuse by Design</h3>
+              <ul class="bullets">
+                <li>Tracker is notified at transfer level (checkpointing)</li>
+                <li>Excluded wallets do not earn (Pair, token contract, etc.)</li>
+                <li>Excluded wallets do not accrue rewards while excluded. Re-including does not retroactively accrue rewards for the excluded period. 
+                  Rewards accrued before exclusion remain claimable.(test procedure documented)</li>
+                <li>High-frequency traders bleed via taxes and usually hold less</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Mostly implemented; "re-include no back-earn" should be proven by a dedicated test</div>
+            </article>
+          </div>
+
+          <div class="callout">
+            <div class="callout__title">Key Property</div>
+            <p>
+              Rewards are paid in MON, tracked in a dedicated contract, and earned only by eligible balances.
+              There is no inflation and no reflections gas-tax on every transfer.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ANTI-ABUSE PHILOSOPHY -->
+      <section class="section" id="anti">
+        <div class="container">
+          <div class="section__head">
+            <h2>Anti-Abuse Philosophy</h2>
+            <p>We use deterministic on-chain accounting and explicit exclusions.</p>
+          </div>
+
+          <div class="grid grid--3">
+            <article class="panel">
+              <h3>Economic Friction</h3>
+              <ul class="bullets">
+                <li>Sell tax can be higher than buy tax (parameter)</li>
+                <li>Taxes scale naturally with activity/volume</li>
+                <li>Optional future: max tx / cooldown / launch window</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Base friction implemented; limits/cooldowns are roadmap</div>
+            </article>
+
+            <article class="panel">
+              <h3>Reward Discipline</h3>
+              <ul class="bullets">
+                <li>Snapshot-based rewards</li>
+                <li>Eligibility is explicit</li>
+                <li>Excluded addresses do not earn</li>
+                <li>Optional future: additional eligibility rules</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>No Price Control</h3>
+              <ul class="bullets">
+                <li>No bonding curve pricing</li>
+                <li>No migration cliff</li>
+                <li>Pure market discovery</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Implemented</div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- NFT LAYER -->
+      <section class="section" id="nfts">
+        <div class="container">
+          <div class="section__head">
+            <h2>NFT Layer (Phase 2) — Roadmap</h2>
+            <p>NFTs are optional reward multipliers with anti-gaming decay mechanics.</p>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>What NFTs Do</h3>
+              <ul class="bullets">
+                <li>Boost a wallet's share of MON rewards (planned)</li>
+                <li>Decay with overuse to prevent farming (planned)</li>
+                <li>Do not gate holding MMM</li>
+                <li>Do not mint MMM</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>Integration</h3>
+              <ul class="bullets">
+                <li>Reward tracker checks NFT ownership</li>
+                <li>Multiplier applied during accounting</li>
+                <li>Decay rate adjusts based on usage</li>
+                <li>Launch after token stability</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Decay Mechanics</h3>
+              <ul class="bullets">
+                <li>Frequent boost use reduces multiplier</li>
+                <li>Natural recovery during non-use periods</li>
+                <li>Minimum floor multiplier guaranteed</li>
+                <li>Prevents boost farming strategies</li>
+              </ul>
+            </article>
+            <article class="panel">
+              <h3>Rarity Tiers (Concept)</h3>
+              <div class="table-wrap">
+                <table class="table" aria-label="NFT rarity boosts">
+                  <thead>
+                    <tr>
+                      <th>Rarity</th>
+                      <th>Base Boost</th>
+                      <th>Max Cooldown</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Common</td><td>+5%</td><td>12h</td></tr>
+                    <tr><td>Rare</td><td>+20%</td><td>24h</td></tr>
+                    <tr><td>Legendary</td><td>+25%</td><td>48h</td></tr>
+                    <tr><td>1/1</td><td>+50%</td><td>72h</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIQUID STAKING SECTION -->
+      <section class="section" id="liquid-staking">
+        <div class="container">
+          <div class="section__head">
+            <h2>Liquid Staking Integration — Roadmap</h2>
+            <p>Optional yield stacking for idle MON. Community-voted and modular.</p>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>The Concept</h3>
+              <ul class="bullets">
+                <li><strong>Liquid Staking Tokens (LSTs):</strong> gMON, sMON, etc.</li>
+                <li>Stake MON → receive a liquid derivative token</li>
+                <li>Derivative yields staking rewards while remaining liquid</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>Curvance Integration</h3>
+              <ul class="bullets">
+                <li>Deposit LSTs into Curvance lending</li>
+                <li>Earn lending yield on top of staking yield</li>
+                <li>Optional leverage of incentives (risk-managed)</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">Practical Goal</div>
+            <p>
+              If MON sits idle for a period, liquid staking can turn downtime into yield —
+              without changing MMM supply mechanics.
+            </p>
+          </div>
+        </div>
+      </section>
+      
+      <!-- ADVANCED ANTI-GAMING FRAMEWORK -->
+      <section class="section" id="advanced-gaming">
+        <div class="container">
+          <div class="section__head">
+            <h2>Advanced Anti-Gaming Framework (Roadmap)</h2>
+            <p>Optional layered defenses beyond baseline taxes + snapshot rewards. Not required for launch, but planned.</p>
+          </div>
+
+          <div class="grid grid--3">
+            <article class="panel">
+              <h3>Phase 1: Core Protection</h3>
+              <ul class="bullets">
+                <li><strong>Dynamic Tax Brackets:</strong> adjust based on behavior (planned)</li>
+                <li><strong>Velocity Controls:</strong> explicit frequency penalties (planned)</li>
+                <li><strong>Behavioral Tiers:</strong> holder vs gamer classification (planned)</li>
+                <li><strong>Pattern Recognition:</strong> wash trading heuristics (planned)</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented (baseline taxes exist)</div>
+            </article>
+
+            <article class="panel">
+              <h3>Phase 2: Economic Defense</h3>
+              <ul class="bullets">
+                <li><strong>Graduated Exit:</strong> large sells throttled (planned)</li>
+                <li><strong>Sybil Resistance:</strong> multi-wallet cluster detection (planned)</li>
+                <li><strong>Time-Weighted Eligibility:</strong> rewards scale with holding (planned)</li>
+                <li><strong>Dynamic Cooldowns:</strong> adaptive enforcement (planned)</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+
+            <article class="panel">
+              <h3>Phase 3: Advanced Systems</h3>
+              <ul class="bullets">
+                <li><strong>NFT Decay:</strong> boost decreases with abuse (planned)</li>
+                <li><strong>Oracle Fairness:</strong> randomness where needed (planned)</li>
+                <li><strong>Voluntary Lock:</strong> early unlock penalties (planned)</li>
+                <li><strong>Governance Controls:</strong> parameter voting (planned)</li>
+              </ul>
+              <div class="status-pill"><b>Status:</b> Not implemented</div>
+            </article>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Behavioral Tier System (Concept)</h3>
+              <div class="table-wrap">
+                <table class="table" aria-label="Wallet behavior tiers">
+                  <thead>
+                    <tr>
+                      <th>Tier</th>
+                      <th>Behavior</th>
+                      <th>Tax Rate</th>
+                      <th>Rewards</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="tier-badge tier-diamond">Diamond Hands</span></td>
+                      <td>Low frequency, long holding</td>
+                      <td>Lowest</td>
+                      <td>Full + bonus</td>
+                    </tr>
+                    <tr>
+                      <td><span class="tier-badge tier-normal">Normal</span></td>
+                      <td>Normal trading cadence</td>
+                      <td>Standard</td>
+                      <td>Standard</td>
+                    </tr>
+                    <tr>
+                      <td><span class="tier-badge tier-active">Active Trader</span></td>
+                      <td>High activity</td>
+                      <td>Elevated</td>
+                      <td>Potentially reduced</td>
+                    </tr>
+                    <tr>
+                      <td><span class="tier-badge tier-gamer">Gamer</span></td>
+                      <td>Abusive patterns</td>
+                      <td>Maximum</td>
+                      <td>Potentially zero</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="status-pill"><b>Status:</b> Concept only</div>
+            </article>
+
+            <article class="panel">
+              <h3>Detection & Response Matrix (Concept)</h3>
+              <div class="detection-grid">
+                <div class="detection-item">
+                  <strong>Wash Trading</strong>
+                  <p>Pattern analysis + velocity penalties</p>
+                </div>
+                <div class="detection-item">
+                  <strong>Sybil Attacks</strong>
+                  <p>Cluster detection + linking heuristics</p>
+                </div>
+                <div class="detection-item">
+                  <strong>Front-Running</strong>
+                  <p>Block-level limits / launch window rules</p>
+                </div>
+                <div class="detection-item">
+                  <strong>Reward Gaming</strong>
+                  <p>Eligibility scoring + penalties</p>
+                </div>
+              </div>
+              <div class="status-pill"><b>Status:</b> Concept only</div>
+            </article>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">Progressive Rollout Timeline (Realistic)</div>
+            <div class="phase-grid">
+              <div class="phase-card">
+                <h4>Week 1–2: Foundation (Launch-Ready)</h4>
+                <ul class="bullets">
+                  <li>Taxes accrue to <code>taxTokens</code> (tested)</li>
+                  <li>Swapback MMM → MON funds tracker (tested)</li>
+                  <li>notifyReward updates reward index (tested)</li>
+                  <li>Claim pays MON to holders (tested)</li>
+                  <li>Exclusions: Pair + token contract (tested)</li>
+                </ul>
+              </div>
+              <div class="phase-card">
+                <h4>Week 3–4: Behavioral (Optional)</h4>
+                <ul class="bullets">
+                  <li>Dynamic brackets (if desired)</li>
+                  <li>Explicit cooldowns / launch window rules</li>
+                  <li>Tiering + pattern detection</li>
+                  <li>Sybil heuristics</li>
+                </ul>
+              </div>
+              <div class="phase-card">
+                <h4>Week 5+: Advanced (Optional)</h4>
+                <ul class="bullets">
+                  <li>NFT boosts + decay</li>
+                  <li>Oracle randomness where needed</li>
+                  <li>Governance parameter controls</li>
+                  <li>Additional modules (raffles, etc.)</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="notice__title" style="margin-top: 1rem;">Important constraint</div>
+            <p>Final Security Summary  • Layer	Protection • Launch tax curve	Anti-sniper • 12h + random eligibility	Anti-timing • Epoch separation	Anti-MEV • Deferred conversion	Anti-sandwich • Time-weighted balance	Anti-flash • Global index	Anti-Sybil • Vested claims	Anti-dump • 
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- TOKENOMICS SECTION -->
+      <section class="section" id="tokenomics">
+        <div class="container">
+          <div class="section__head">
+            <h2>Tokenomics</h2>
+            <p>Transparent, community-centric allocation with sustainable yield mechanics.</p>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">Token Fundamentals</div>
+            <div class="allocation-grid">
+              <div class="allocation-item">
+                <div class="allocation-header">
+                  <h4>Initial Liquidity</h4>
+                  <div class="allocation-percentage">90%</div>
+                </div>
+                <p><strong>900,000,000 MMM</strong></p>
+                <ul class="bullets bullets--small">
+                  <li>Paired with 100% of raised ETH/MON</li>
+                  <li>Forms foundational DEX pool</li>
+                  <li><strong>100% LP tokens locked for 6 months</strong></li>
+                  <li>Verifiable public contract</li>
+                </ul>
+              </div>
+
+              <div class="allocation-item">
+                <div class="allocation-header">
+                  <h4>Community Hype Reserve</h4>
+                  <div class="allocation-percentage">7%</div>
+                </div>
+                <p><strong>70,000,000 MMM</strong></p>
+                <ul class="bullets bullets--small">
+                  <li>4/7 multi-sig community wallet</li>
+                  <li>Marketing & community contests</li>
+                  <li>CEX listing facilitation</li>
+                  <li>Future "Chog" project treasury</li>
+                  <li>Community-governed</li>
+                </ul>
+              </div>
+
+              <div class="allocation-item">
+                <div class="allocation-header">
+                  <h4>Initial Contributor Fund</h4>
+                  <div class="allocation-percentage">3%</div>
+                </div>
+                <p><strong>30,000,000 MMM</strong></p>
+                <ul class="bullets bullets--small">
+                  <li>Core deployment team</li>
+                  <li>Smart contract developers</li>
+                  <li>Front-end & community setup</li>
+                  <li>Distributed at launch</li>
+                  <li>Transparent wallet addresses</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Tax Structure</h3>
+              <div class="tax-breakdown">
+                <div class="tax-item">
+                  <div class="tax-rate">5%</div>
+                  <div class="stat__label">Buy Tax</div>
+                  <p>Applied to all purchases</p>
+                </div>
+                <div class="tax-item">
+                  <div class="tax-rate">7%</div>
+                  <div class="stat__label">Sell Tax</div>
+                  <p>Higher to discourage dumping</p>
+                </div>
+                <div class="tax-item">
+                  <div class="tax-rate">0%</div>
+                  <div class="stat__label">Transfer Tax</div>
+                  <p>Free peer-to-peer movement</p>
+                </div>
+              </div>
+              <div class="status-pill"><b>Status:</b> Implemented & tested</div>
+            </article>
+
+            <article class="panel">
+              <h3>Tax Distribution Flow</h3>
+              <div class="distribution-flow">
+                <div><strong>Tax collected in MMM</strong></div>
+                <div class="flow-arrow">↓</div>
+                <div><strong>Batch swap: MMM → MON</strong></div>
+                <div class="flow-arrow">↓</div>
+                <div><strong>MON Proceeds Split:</strong></div>
+                <div class="tax-breakdown">
+                  <div class="tax-item">
+                    <div class="tax-rate">60%</div>
+                    <div>Reward Pool</div>
+                    <small>To holders</small>
+                  </div>
+                  <div class="tax-item">
+                    <div class="tax-rate">25%</div>
+                    <div>Buyback & Burn</div>
+                    <small>Deflationary</small>
+                  </div>
+                  <div class="tax-item">
+                    <div class="tax-rate">15%</div>
+                    <div>Community Multi-sig</div>
+                    <small>Hype & future</small>
+                  </div>
+                </div>
+              </div>
+              <div class="status-pill"><b>Status:</b> Core flow implemented</div>
+            </article>
+          </div>
+
+          <div class="callout">
+            <div class="callout__title">Sustainability Mechanics</div>
+            <p>
+              <strong>Deflationary Engine:</strong> 25% automatic buyback & burn creates continuous upward price pressure.<br>
+              <strong>Community-Controlled Growth:</strong> 15% tax revenue + 7% reserve fund ecosystem expansion.<br>
+              <strong>Transparent Operations:</strong> All allocations public, LP locked, multi-sig governed.
+            </p>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">Launch Protocol</div>
             <ol class="steps">
-              <li>Buys/sells are taxed in MMM (bps configurable)</li>
-              <li>Taxes accumulate in <code>TaxVault</code></li>
-              <li><code>RewardVault</code> can sweep MMM out (RewardVault-only permission)</li>
-            </ol>
-            <div class="badge-row">
-              <span class="badge badge--done">Implemented</span>
-            </div>
-          </article>
-
-          <article class="panel">
-            <h3>Reward Flow</h3>
-            <ol class="steps">
-              <li>Reward distribution is snapshot-style accounting</li>
-              <li>Claims are gated by <code>minHoldTimeSec</code>, <code>claimCooldown</code>, and <code>minBalance</code></li>
-              <li>Eligible supply is computed using the locked exclusion rule</li>
-            </ol>
-            <div class="badge-row">
-              <span class="badge badge--done">Implemented</span>
-              <span class="badge badge--done">Live-tested</span>
-            </div>
-          </article>
-        </div>
-
-        <div class="notice">
-          <div class="notice__title">What v1 does NOT do</div>
-          <ul class="bullets">
-            <li>No NFT boosts (phase 2)</li>
-            <li>No advanced tiering / dynamic behavioral taxes (optional roadmap)</li>
-            <li>No “magic” liquidity automation — pair creation + LP seeding are explicit steps</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- MAINNET DEX CONSTANTS -->
-    <section class="section" id="mainnet-dex">
-      <div class="container">
-        <div class="section__head">
-          <h2>Monad Mainnet DEX Constants</h2>
-          <p>These are enforced for mainnet launch runbooks and scripts.</p>
-        </div>
-
-        <div class="grid grid--2">
-          <article class="panel">
-            <h3>Network</h3>
-            <div class="kv">
-              <div class="kv__row"><span>Network</span><strong>Monad Mainnet</strong></div>
-              <div class="kv__row"><span>Chain ID</span><strong>143</strong></div>
-            </div>
-            <div class="badge-row">
-              <span class="badge badge--done">Confirmed</span>
-            </div>
-          </article>
-
-          <article class="panel">
-            <h3>Uniswap V2</h3>
-            <div class="kv">
-              <div class="kv__row"><span>Factory</span><code>0x182a927119d56008d921126764bf884221b10f59</code></div>
-              <div class="kv__row"><span>Router02</span><code>0x4b2ab38dbf28d31d467aa8993f6c2585981d6804</code></div>
-              <div class="kv__row"><span>WMON</span><code>0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A</code></div>
-            </div>
-            <div class="badge-row">
-              <span class="badge badge--done">Code present</span>
-              <span class="badge badge--done">Verified</span>
-            </div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- MAINNET LAUNCH RUNBOOK -->
-    <section class="section" id="launch">
-      <div class="container">
-        <div class="section__head">
-          <h2>Mainnet Launch Runbook (v1)</h2>
-          <p>One step at a time; no guessing; everything is manifest-driven and reproducible.</p>
-        </div>
-
-        <div class="runbook">
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>0) Pre-flight environment</h3>
-              <span class="badge badge--warn">Required</span>
-            </div>
-            <ul class="bullets">
-              <li>Confirm deployer has enough MON for all transactions + safety margin</li>
-              <li>Confirm RPC for monadMainnet is set and stable</li>
-              <li>Confirm Uniswap V2 factory/router/wmon constants (above)</li>
-              <li>Confirm you are on the correct git commit you intend to ship</li>
-            </ul>
-          </div>
-
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>1) Create the pair (MMM / WMON)</h3>
-              <span class="badge badge--warn">Blocking</span>
-            </div>
-            <ul class="bullets">
-              <li>After MMMToken is deployed on mainnet, call Factory.createPair(MMMToken, WMON)</li>
-              <li>Persist the resulting pair address in the manifest (<code>PAIR_ADDR</code>)</li>
-              <li>Confirm the pair has code and matches factory expectations</li>
-            </ul>
-            <div class="callout">
-              <div class="callout__title">Why this matters</div>
-              <p>
-                v1 tax recognition relies on the pair being set. Mainnet deployment must lock the correct pair address.
-              </p>
-            </div>
-          </div>
-
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>2) Deploy MMM v1 (locked)</h3>
-              <span class="badge badge--warn">Required</span>
-            </div>
-            <ul class="bullets">
-              <li>Run locked deploy script (mainnet)</li>
-              <li>Script writes <code>deployments/monadMainnet/latest.json</code></li>
-              <li>Router must be non-zero on mainnet</li>
-            </ul>
-          </div>
-
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>3) Manifest verification gate</h3>
-              <span class="badge badge--warn">Required</span>
-            </div>
-            <ol class="steps">
-              <li>Run <code>preflight-from-manifest</code> (must PASS)</li>
-              <li>Run <code>assert-manifest</code> (must PASS)</li>
-              <li>Run <code>stamp-manifest</code> (pins bytecode hashes + git commit)</li>
-              <li>Re-run <code>assert-manifest</code> (warnings should be gone)</li>
+              <li><strong>Community Raise:</strong> Transparent ETH/MON raise via published multi-sig</li>
+              <li><strong>Liquidity Creation:</strong> 100% raised capital + 90% MMM supply form initial pool</li>
+              <li><strong>LP Lock:</strong> 100% LP tokens locked for 6 months (public verification)</li>
+              <li><strong>Trading Activation:</strong> Taxes & rewards live from Block 1</li>
+              <li><strong>Fund Distribution:</strong> 3% contributor + 7% community funds deployed</li>
             </ol>
           </div>
+        </div>
+      </section>
 
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>4) Add liquidity + verify trading path</h3>
-              <span class="badge badge--warn">Required</span>
-            </div>
-            <ul class="bullets">
-              <li>Seed LP with MMM + MON/WMON using Router02</li>
-              <li>Verify buy/sell route works (small trades)</li>
-              <li>Verify TaxVault receives MMM taxes and wiring remains correct</li>
-            </ul>
+      <!-- LAUNCH DECISION -->
+      <section class="section" id="launch">
+        <div class="container">
+          <div class="section__head">
+            <h2>Launch Decision</h2>
+            <p>
+              One-time statement: MMM does not use a bonding curve.
+              Liquidity is seeded directly on a DEX and price discovery is market-driven.
+            </p>
           </div>
 
-          <div class="runbook__step">
-            <div class="runbook__head">
-              <h3>5) Ownership + operational hardening</h3>
-              <span class="badge badge--warn">Recommended</span>
-            </div>
-            <ul class="bullets">
-              <li>Transfer ownership to multisig (or timelock) for protocol contracts</li>
-              <li>Lock LP (or clearly publish LP policy)</li>
-              <li>Publish the stamped manifest (addresses + bytecode hashes)</li>
-              <li>Prepare monitoring: tax inflows, RewardVault params, claim anomalies</li>
-            </ul>
+          <div class="grid grid--2">
+            <article class="panel panel--bad">
+              <h3>Rejected: Bonding Curve</h3>
+              <ul class="bullets">
+                <li>Platform dependency</li>
+                <li>Price manipulation risks</li>
+                <li>Liquidity constraints</li>
+                <li>Vulnerable to gaming</li>
+              </ul>
+            </article>
+
+            <article class="panel panel--good">
+              <h3>Selected: Stealth DEX</h3>
+              <ol class="steps">
+                <li>Deploy MMM token</li>
+                <li>Deploy Reward Tracker</li>
+                <li>Create MMM / WMON pool</li>
+                <li>Seed initial liquidity</li>
+                <li>Enable trading (block 1)</li>
+                <li>Taxes + rewards live immediately</li>
+              </ol>
+            </article>
+          </div>
+
+          <div class="notice">
+            <div class="notice__title">LP Risk Management & Launch Protection</div>
+            <p>
+              <strong>LP lock:</strong> planned (requires a locker contract/service).<br/>
+              <strong>Launch protection window:</strong> planned (max tx, cooldowns, anti-bot rules require additional enforcement logic).
+            </p>
           </div>
         </div>
+      </section>
 
-        <div class="notice">
-          <div class="notice__title">Go/No-Go criteria</div>
-          <ul class="checklist">
-            <li class="todo">Mainnet deploy script completes without manual patching</li>
-            <li class="todo">Manifest: stamped (gitCommit + bytecode hashes) and committed</li>
-            <li class="todo">Pair: created and verified (MMM/WMON) + liquidity seeded</li>
-            <li class="todo">preflight-from-manifest PASS on mainnet</li>
-            <li class="todo">assert-manifest PASS on mainnet (strict, router code present)</li>
-          </ul>
-        </div>
-      </div>
-    </section>
+      <!-- NEXT STEPS -->
+      <section class="section" id="next">
+        <div class="container">
+          <div class="section__head">
+            <h2>Next Steps (Execution)</h2>
+            <p>Now we stop debating and start parameterizing.</p>
+          </div>
 
-    <!-- POST-LAUNCH ROADMAP -->
-    <section class="section" id="postlaunch">
-      <div class="container">
-        <div class="section__head">
-          <h2>Post-Launch Roadmap</h2>
-          <p>Everything below is optional and should not block a safe v1 launch.</p>
-        </div>
+          <div class="grid grid--2">
+            <article class="panel">
+              <h3>Immediate</h3>
+              <ol class="steps">
+                <li><strong>Finalize tax math</strong> (rates, swap thresholds)</li>
+                <li><strong>Decide swap cadence</strong> (manual, bot, or threshold-triggered)</li>
+                <li><strong>Propose exact LP numbers</strong> (capital-efficient seeding)</li>
+                <li><strong>Prove "re-include no back-earn"</strong> with the test sequence</li>
+              </ol>
+            </article>
 
-        <div class="grid grid--3">
-          <article class="panel">
-            <h3>Phase 1.1 — Ops + Dashboard</h3>
-            <ul class="bullets">
-              <li>Public dashboard: taxes collected, vault balances, claim stats</li>
-              <li>Alerts: abnormal tax spikes, claim failures, parameter drift</li>
-              <li>Docs: runbooks, incident procedures, manifest publishing</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--warn">Planned</span>
+            <article class="panel">
+              <h3>Then</h3>
+              <ol class="steps">
+                <li>Test end-to-end (tax → swapback → notify → claim)</li>
+                <li>Launch with foundation mechanics</li>
+                <li>Monitor behavior and tune parameters</li>
+                <li>If desired: decide upgradeability vs v2 migration for advanced mechanics</li>
+              </ol>
+            </article>
+          </div>
+
+          <footer class="footer">
+            <div class="footer__inner">
+              <span class="muted">MMM — Monad Money Machine</span>
+              <span class="muted">DEX-only • MON Rewards • Snapshot Accounting • No Bonding Curve</span>
             </div>
-          </article>
-
-          <article class="panel">
-            <h3>Phase 2 — NFT Boosts</h3>
-            <ul class="bullets">
-              <li>Optional multiplier on rewards</li>
-              <li>Anti-gaming decay system</li>
-              <li>No MMM minting; no supply change</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--warn">Not implemented</span>
-            </div>
-          </article>
-
-          <article class="panel">
-            <h3>Phase 3 — Advanced Anti-Gaming</h3>
-            <ul class="bullets">
-              <li>Dynamic behavior tax brackets</li>
-              <li>Explicit launch windows / cooldown policies</li>
-              <li>Sybil heuristics (optional; careful with false positives)</li>
-            </ul>
-            <div class="badge-row">
-              <span class="badge badge--warn">Concept</span>
-            </div>
-          </article>
+          </footer>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
 
-  <footer class="footer">
-    <div class="container">
-      <p class="muted">
-        MMM v1: manifest-driven deployments, reproducible verification, and explicit mainnet runbooks.
-      </p>
-    </div>
-  </footer>
-</body>
+      <!-- NOTES -->
+      <section class="section" id="notes">
+        <div class="container">
+          <div class="section__head">
+           <h2>Notes</h2>
+            <p>Quick capture for raw ideas, execution thoughts, and reminders.</p>
+          </div>
+
+          <div class="card notes-card">
+            <label for="notesInput" class="notes-label">Idea dump (auto-save ready)</label>
+
+            <textarea
+              id="notesInput"
+              class="notes-textarea"
+              rows="14"
+            >To Do List: 
+
+            - A tokenomics stress-test framework
+            - Header on the right side of the screen (mobile version)
+            - Hamburger menu can be used to navigate to the different pages of the website 
+            - connect button transform in the address when connected 
+            - when we clic on the address we have the disconnect button and the link to the Roadmap page in a scroll down menu.
+            - Dynamic Launch Tax Curve
+            - Eligibility Gate for the rewards ( Randomized Eligibility Offset (Anti-Timing) ) 
+            - Epoch-Based Reward Architecture
+            - Time-Weighted Eligibility Balance
+            - Global Reward Index (Anti-Sybil)
+            - Deferred Tax Conversion (Anti-MEV) No Swap During User Transactions
+            - Nfts Layer
+            - Taxes DO NOT generate rewards during launch
+            - create the contract for weekly rewards 
+            - Claim Vesting (Final Anti-Dump Layer)
+            - On-Chain Proof Guarantees
+            - create the contract for  the liquid staking
+            - create the contract for the governance
+
+
+            </textarea>
+
+            <div class="notes-actions">
+              <button class="btn btn--primary">Save / Upload Notes</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </section>  
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
 </html>
