@@ -1,0 +1,27 @@
+{
+  "chainId": 10143,
+  "network": "monadTestnet",
+  "deployer": "0xBF98e5FEf825CcD68dcFF3cF0a766faB413D6207",
+  "timestamp": "2026-01-25T00:34:41.142Z",
+  "MMMToken": "0x701E23AfeDfc7C4FFbe92FCBe771fB5f0Df63e66",
+  "TaxVault": "0x2C7504Bb0E261149C1668C806EbFD4b6D5068F6B",
+  "RewardVault": "0xF7dbD9e4F83fa82A5890DAa55Ab87F5b8C32Bb80",
+  "params": {
+    "PAIR_ADDR": "0x2324CfB99aE4cF3Df4779a9E37242dC96209fec5",
+    "BUY_TAX_BPS": 500,
+    "SELL_TAX_BPS": 500,
+    "MIN_HOLD_SEC": 43200,
+    "COOLDOWN_SEC": 43200,
+    "MIN_BALANCE": "1000000000000000000",
+    "MMM_SUPPLY_TOKENS": "1000000000",
+    "MMM_NAME": "Monad Money Machine",
+    "MMM_SYMBOL": "MMM",
+    "ROUTER_ADDR": "0x0000000000000000000000000000000000000000"
+  },
+  "build": {
+    "gitCommit": "c7683d7ad29f9caced0a1007f2404b65455dbd2e",
+    "mmmTokenBytecodeHash": "0x58018a63530776f773fafacddf4d9d8e271f93bc08b62ca28bd480c59da8dee4",
+    "taxVaultBytecodeHash": "0xc186ff543629aa56b878c3e6cda08923db164866842220d9df56f2b0398247a1",
+    "rewardVaultBytecodeHash": "0xfd9b12c8c649db21ed1ae3738d6c1e3159f23a448eb214f0c0355f75f11c2f0b"
+  }
+}
