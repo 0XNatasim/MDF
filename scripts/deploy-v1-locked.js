@@ -1,34 +1,4 @@
 // scripts/deploy-v1-locked.js
-//
-// Locked v1 deploy:
-// - Deterministic MMMToken constructor enforcement (no guessing)
-// - Writes a flat manifest (Format B) to deployments/<network>/latest.json
-// - Router enforcement ONLY on mainnet (chainId 143 or network name contains "mainnet")
-// - On mainnet, ROUTER_ADDR is resolved from MONAD_MAINNET_ROUTER first (then ROUTER_ADDR)
-// - Pair must have code (tax logic depends on recognizing pair)
-//
-// Usage:
-//   npx hardhat run --network monadTestnet scripts/deploy-v1-locked.js
-//   npx hardhat run --network monadMainnet scripts/deploy-v1-locked.js
-//
-// Required env:
-//   PRIVATE_KEY
-//   PAIR_ADDR                 (must be a deployed pair contract address)
-//   MMM_SUPPLY_TOKENS         (integer string; default 1000000000)
-// Optional env:
-//   MMM_NAME, MMM_SYMBOL
-//   MIN_HOLD_SEC, COOLDOWN_SEC, MIN_BALANCE
-//   BUY_TAX_BPS, SELL_TAX_BPS
-//
-// Mainnet-only env (required on mainnet):
-//   MONAD_MAINNET_ROUTER      (preferred)
-//   MONAD_MAINNET_FACTORY     (recommended, not required by this script)
-//
-// Notes:
-// - This script assumes TaxVault constructor: (address mmmToken, address initialOwner)
-// - RewardVault constructor: (address _mmm, address _taxVault, uint48 minHold, uint48 cooldown, uint256 minBal, address initialOwner)
-// - MMMToken constructor: (string name_, string symbol_, uint256 initialSupply, address owner_)
-
 const hre = require("hardhat");
 const { ethers } = hre;
 const fs = require("fs");
@@ -47,9 +17,6 @@ function optEnv(k, d = "") {
 
 function isHexAddress(a) {
   return typeof a === "string" && /^0x[a-fA-F0-9]{40}$/.test(a);
-}
-function isNonZeroAddress(a) {
-  return isHexAddress(a) && a.toLowerCase() !== ethers.ZeroAddress;
 }
 
 async function codeAt(addr) {
@@ -78,6 +45,20 @@ function safeGitCommit() {
   }
 }
 
+function isProbablyMainnet(networkName, chainId) {
+  // Manual override
+  if (optEnv("IS_MAINNET", "") === "1") return true;
+  if (optEnv("IS_MAINNET", "") === "0") return false;
+
+  const n = String(networkName || "").toLowerCase();
+  if (n.includes("mainnet") && !n.includes("test")) return true;
+
+  const mainChainId = optEnv("MAINNET_CHAIN_ID", "");
+  if (mainChainId && String(chainId) === String(mainChainId)) return true;
+
+  return false;
+}
+
 function normalizeName(s) {
   return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -98,7 +79,7 @@ function ctorSignature(factory) {
 /**
  * Deterministic MMMToken deploy:
  * - If constructor matches (string,string,uint256,address), deploy EXACTLY with (name,symbol,supply,owner)
- * - Otherwise, fail loudly with the detected signature.
+ * - Otherwise, fail loudly with the detected signature (so we update the script once, correctly).
  */
 async function deployMMMTokenDeterministic({ name, symbol, supplyRaw, owner }) {
   const f = await ethers.getContractFactory("MMMToken");
@@ -107,6 +88,7 @@ async function deployMMMTokenDeterministic({ name, symbol, supplyRaw, owner }) {
   const types = inputs.map((i) => i.type);
   const names = inputs.map((i) => i.name || "");
 
+  // Expected v1 MMMToken signature
   const expected = ["string", "string", "uint256", "address"];
   const matches =
     inputs.length === 4 &&
@@ -126,6 +108,7 @@ async function deployMMMTokenDeterministic({ name, symbol, supplyRaw, owner }) {
     );
   }
 
+  // Deploy with exact args
   const args = [name, symbol, supplyRaw, owner];
   const c = await f.deploy(...args);
   await c.waitForDeployment();
@@ -144,46 +127,31 @@ async function main() {
   const networkName = hre.network.name;
   const chainId = Number(net.chainId);
 
-  // Mainnet detection (strong + explicit)
-  const isMainnet = chainId === 143 || /mainnet/i.test(String(networkName));
-
-  // Pair is mandatory (tax logic recognizes buys/sells vs transfers)
   const PAIR_ADDR = mustEnv("PAIR_ADDR");
+  const ROUTER_ADDR = optEnv("ROUTER_ADDR", ethers.ZeroAddress);
+
   if (!isHexAddress(PAIR_ADDR)) throw new Error(`PAIR_ADDR is not a valid address: ${PAIR_ADDR}`);
+  if (ROUTER_ADDR !== ethers.ZeroAddress && !isHexAddress(ROUTER_ADDR)) {
+    throw new Error(`ROUTER_ADDR is not a valid address: ${ROUTER_ADDR}`);
+  }
 
-  // Router resolution (this is the critical piece you requested)
-  // - On mainnet: require non-zero router, prefer MONAD_MAINNET_ROUTER, fallback ROUTER_ADDR
-  // - On testnet: allow zero
-  let ROUTER_ADDR = optEnv("ROUTER_ADDR", "");
+  const isMainnet = isProbablyMainnet(networkName, chainId);
+
+  // Enforce ROUTER only on mainnet
   if (isMainnet) {
-    ROUTER_ADDR = optEnv("MONAD_MAINNET_ROUTER", ROUTER_ADDR);
-    if (!isNonZeroAddress(ROUTER_ADDR)) {
-      throw new Error(
-        `Mainnet deployment requires ROUTER_ADDR non-zero.\n` +
-          `Set MONAD_MAINNET_ROUTER (preferred) or ROUTER_ADDR in env.`
-      );
+    if (ROUTER_ADDR === ethers.ZeroAddress) {
+      throw new Error(`Mainnet deployment requires ROUTER_ADDR non-zero. Set ROUTER_ADDR in env.`);
     }
-  } else {
-    if (!isNonZeroAddress(ROUTER_ADDR)) ROUTER_ADDR = ethers.ZeroAddress;
-  }
-
-  // Validate pair code exists
-  const pCode = await codeAt(PAIR_ADDR);
-  if (pCode === "0x") {
-    throw new Error(`PAIR_ADDR has no code at ${PAIR_ADDR}. Provide a valid Pair contract address.`);
-  }
-
-  // Enforce router code on mainnet (optional on testnet)
-  if (isMainnet) {
     const rCode = await codeAt(ROUTER_ADDR);
     if (rCode === "0x") {
       throw new Error(`Mainnet deployment requires ROUTER_ADDR to have code. Got 0x at ${ROUTER_ADDR}`);
     }
-  } else {
-    if (ROUTER_ADDR !== ethers.ZeroAddress) {
-      const rCode = await codeAt(ROUTER_ADDR);
-      if (rCode === "0x") throw new Error(`ROUTER_ADDR provided but has no code: ${ROUTER_ADDR}`);
-    }
+  }
+
+  // Pair must exist as code (your token tax logic depends on pair recognition)
+  const pCode = await codeAt(PAIR_ADDR);
+  if (pCode === "0x") {
+    throw new Error(`PAIR_ADDR has no code at ${PAIR_ADDR}. Provide a valid Pair contract address.`);
   }
 
   // Token identity
@@ -202,16 +170,13 @@ async function main() {
   assertNumericTokenString(SUPPLY_TOKENS, "MMM_SUPPLY_TOKENS");
   const supplyRaw = ethers.parseUnits(SUPPLY_TOKENS, 18);
 
-  // Optional dry-run (no tx)
-  const DRYRUN = optEnv("DRYRUN", "") === "1";
-
   console.log(`=== MMM v1 LOCKED DEPLOY (${networkName}) ===`);
-  console.log("deployer   :", deployer.address);
-  console.log("chainId    :", chainId);
-  console.log("isMainnet  :", isMainnet);
-  console.log("PAIR_ADDR  :", PAIR_ADDR);
+  console.log("deployer  :", deployer.address);
+  console.log("chainId   :", chainId);
+  console.log("PAIR_ADDR :", PAIR_ADDR);
   console.log("ROUTER_ADDR:", ROUTER_ADDR);
-  console.log("token      :", { MMM_NAME, MMM_SYMBOL });
+  console.log("isMainnet :", isMainnet);
+  console.log("token     :", { MMM_NAME, MMM_SYMBOL });
   console.log("reward params:", {
     MIN_HOLD_SEC: MIN_HOLD_SEC.toString(),
     COOLDOWN_SEC: COOLDOWN_SEC.toString(),
@@ -220,11 +185,6 @@ async function main() {
   console.log("tax params:", { BUY_TAX_BPS: BUY_TAX_BPS.toString(), SELL_TAX_BPS: SELL_TAX_BPS.toString() });
   console.log("supply:", { MMM_SUPPLY_TOKENS: SUPPLY_TOKENS, supplyRaw: supplyRaw.toString() });
   console.log("");
-
-  if (DRYRUN) {
-    console.log("DRYRUN=1 — exiting before deployment (no transactions).");
-    return;
-  }
 
   // 1) Deploy MMMToken (deterministic)
   const { contract: mmm, usedArgs, ctorTypes, ctorNames } = await deployMMMTokenDeterministic({
@@ -288,9 +248,7 @@ async function main() {
     await tx.wait();
   }
 
-  // 7) Set router
-  // - On mainnet: always set (enforced non-zero)
-  // - On testnet: set only if non-zero
+  // 7) Set router if provided (enforced non-zero on mainnet only)
   if (ROUTER_ADDR !== ethers.ZeroAddress) {
     const MMM = await ethers.getContractAt("MMMToken", MMMToken);
     const tx = await MMM.setRouter(ROUTER_ADDR);
