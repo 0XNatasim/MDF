@@ -3,12 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "preflight:live": "hardhat run --network monadTestnet scripts/preflight-live.js",
+    "test:unit": "node scripts/run-unit-tests.js",
+    "test:live": "node scripts/run-live-tests.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "dotenv": "^17.2.3",

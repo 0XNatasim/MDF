@@ -158,9 +158,9 @@ async function main() {
   // DEX + pair inputs
   // - ROUTER enforced on mainnet
   // - FACTORY + WMON required if we want the script to create/verify the pair automatically (recommended mainnet)
-  const ROUTER_ADDR = optEnv("ROUTER_ADDR", ethers.ZeroAddress);
-  const FACTORY_ADDR = optEnv("FACTORY_ADDR", "");
-  const WMON_ADDR = optEnv("WMON_ADDR", "");
+  const ROUTER_ADDR = mustEnv("MONAD_MAINNET_ROUTER");
+  const FACTORY_ADDR = mustEnv("MONAD_MAINNET_FACTORY");
+  const WMON_ADDR = mustEnv("WMON_ADDR");
   const PAIR_ADDR_ENV = optEnv("PAIR_ADDR", "");
 
   if (ROUTER_ADDR !== ethers.ZeroAddress && !isHexAddress(ROUTER_ADDR)) {

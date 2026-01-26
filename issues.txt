@@ -1,0 +1,149 @@
+Issues Found
+1. MMMToken.sol: Tax Calculation on Taxed Amount
+Location: _update() function, tax application logic
+
+When taxes are applied, the tax is calculated on the full value, but then super._update() is called twice (once to taxVault, once to recipient). This means if a user transfers 1000 tokens with 5% tax:
+
+Tax: 50 tokens → taxVault
+Net: 950 tokens → recipient
+Total out: 1050 tokens (exceeds input by 50)
+Why it matters: Tokens are created out of thin air. The supply increases unintentionally, inflating the token economics and breaking accounting.
+
+Fix: Calculate tax correctly
+
+--------------------------------------------------------------------
+
+rewardvault.sol:
+ RewardVault: Integer Division Loss in notifyRewardAmountFromTaxVault()
+Location: accRewardPerToken update calculation
+
+accRewardPerToken += (amount * ACC_SCALE) / denom;
+Solidity (Ethereum)
+If (amount * ACC_SCALE) % denom != 0, precision is lost. Small remainder amounts are discarded, meaning some rewards are permanently lost.
+
+Why it matters: Users receive slightly less rewards than owed. Over many distributions, this compounds. For small denom values, loss can be significant.
+
+Fix: Track remainder or use higher precision accounting
+
+--------------------------------------------------------------------
+
+RewardVault: syncRewardDebt() Unprotected
+Location: syncRewardDebt() external function
+
+No access control. Any address can call it on any user, overwriting their rewardDebt and resetting earned rewards.
+
+Why it matters: Griefing vector. A malicious caller can zero out a user's pending rewards by calling syncRewardDebt(user) before they claim, forcing them to lose earnings.
+
+Fix: Add onlyOwner or remove the function if unnecessary
+
+--------------------------------------------------------------------
+
+TaxVault: Missing Zero-Address Check in Constructor
+Location: Constructor parameter mmmToken
+
+The check exists but is incomplete—no validation that mmmToken is actually a valid contract.
+
+Why it matters: If a typo provides an EOA address, sweepToRewardVault() will silently fail, and MMM can get stuck.
+
+--------------------------------------------------------------------
+
+Reward Debt Desynchronization (Critical)
+The Issue: In RewardVault.sol, a user’s rewardDebt is only updated when they manually call claim() or syncRewardDebt(). It is not updated when the user receives or sends MMMToken via transfer().
+
+Why it matters:
+
+Instant Reward Gaming: A user can hold 1 token for a long time to satisfy the minHoldTimeSec. When the accRewardPerToken has increased significantly (due to many taxes), the user can buy 1,000,000 tokens and immediately call claim().
+The Result: The pending() function will calculate rewards for the 1,000,000 tokens as if the user held them since the beginning of time. This allows "snipers" to drain rewards that were meant for long-term holders.Reward Debt Desynchronization (Critical)
+The Issue: In RewardVault.sol, a user’s rewardDebt is only updated when they manually call claim() or syncRewardDebt(). It is not updated when the user receives or sends MMMToken via transfer().
+
+Why it matters:
+
+Instant Reward Gaming: A user can hold 1 token for a long time to satisfy the minHoldTimeSec. When the accRewardPerToken has increased significantly (due to many taxes), the user can buy 1,000,000 tokens and immediately call claim().
+The Result: The pending() function will calculate rewards for the 1,000,000 tokens as if the user held them since the beginning of time. This allows "snipers" to drain rewards that were meant for long-term holders.
+
+--------------------------------------------------------------------
+
+"Dust" Bypass of Hold-Time Gate (High)
+The Issue: The lastNonZeroAt mapping in MMMToken.sol only updates when a balance goes from zero to non-zero.
+
+if (balBefore == 0 && balAfter > 0) {
+    lastNonZeroAt[user] = uint48(block.timestamp);
+}
+Solidity (Ethereum)
+Why it matters:
+
+A user can "prime" 100 wallets by sending 0.000001 MMM to each.
+After the minHoldTimeSec passes, these wallets are "mature."
+The user can then move large amounts of tokens into these wallets and claim rewards instantly. The minHoldTimeSec intended to reward loyalty is rendered useless because it doesn't track the hold time of the specific tokens, only the address status.
+
+--------------------------------------------------------------------
+
+Retroactive Reward Claiming for New Holders (High)
+The Issue: When a new user acquires tokens, their rewardDebt in the RewardVault is 0 by default. Why it matters:
+
+If the accRewardPerToken is currently 5.0, and a new user buys tokens, pending() returns (balance * 5.0) - 0.
+The new user immediately becomes eligible for all rewards distributed since the contract's inception. This will quickly bankrupt the RewardVault, leaving no tokens for the actual long-term holders.
+Fix: The MMMToken contract needs a "hook" (like a _beforeTokenTransfer) that calls syncRewardDebt on both the sender and receiver in the RewardVault.
+
+--------------------------------------------------------------------
+
+O(n) Gas Limit Risk in eligibleSupply (Medium)
+The Issue: The eligibleSupply() function iterates through the excludedRewardAddresses array.
+
+for (uint256 i = 0; i < n; i++) {
+    sumExcluded += mmm.balanceOf(excludedRewardAddresses[i]);
+}
+Solidity (Ethereum)
+Why it matters:
+
+This function is called inside notifyRewardAmountFromTaxVault. If the owner adds many excluded addresses (e.g., various CEX wallets, pairs, bridges), the gas cost will grow.
+If the array becomes too large, the notifyRewardAmountFromTaxVault transaction will fail (Out of Gas), effectively locking the rewards inside the TaxVault forever.
+
+--------------------------------------------------------------------
+
+Double _update Calls in MMMToken (Medium)
+The Issue: In the tax logic of MMMToken.sol, you call super._update twice:
+
+super._update(from, taxVault, taxAmount);
+super._update(from, to, netAmount);
+Solidity (Ethereum)
+Why it matters:
+
+While functional, this is gas-inefficient. Every taxed transfer triggers two sets of balance updates and two Transfer events.
+More importantly, if you ever integrate with 3rd party protocols that track Transfer events, they may misinterpret the double-transfer from the same from address in a single transaction.
+
+--------------------------------------------------------------------
+
+Hardcoded router Exclusion (Low)
+The Issue: You exclude router from taxes. Why it matters:
+
+In Uniswap V2, the router is never the from or to in the actual ERC20.transfer call (it's the pair and the user).
+In Uniswap V3 or other aggregators, the router (or UniversalRouter) often does hold tokens temporarily.
+If a user interacts directly with the pair, they might bypass the router check. It is safer to tax based strictly on from == pair or to == pair regardless of the msg.sender or router address.
+Recommended Fixes
+Add Hooks: Modify MMMToken._update to call a function in RewardVault that updates the rewardDebt for the from and to addresses before their balances change.
+Initialize Debt: When a user receives tokens for the first time, set their rewardDebt = (balance * accRewardPerToken).
+Track Weighted Hold Time: Instead of a simple timestamp, consider a "Reward Points" system where points = balance * time_held.
+--------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------
+
+
