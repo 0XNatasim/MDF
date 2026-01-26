@@ -42,10 +42,10 @@ module.exports = {
       accounts,
     },
       // 🔒 MAINNET 
-    monadMainnet: {
-      url: process.env.MONAD_MAINNET_RPC, // REQUIRED
-      chainId: 143,
-      accounts,
-    },
+//    monadMainnet: {
+//      url: process.env.MONAD_MAINNET_RPC, // REQUIRED
+//      chainId: 143,
+//      accounts,
+//    },
   },
 };
