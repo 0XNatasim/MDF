@@ -2,82 +2,68 @@
 pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-/**
- * MMMToken (v1)
- * - ERC20 with deterministic buy/sell taxation on ONE canonical pair only.
- * - Taxes accumulate in MMM into a TaxVault (one-time wiring).
- * - No external calls to routers/pairs (no swaps, no hooks).
- * - taxesEnabled defaults to false; cannot be enabled until taxVault is set.
- * - lastNonZeroAt tracking for continuous non-zero balance holding periods.
- *
- * OpenZeppelin v5: override _update(), not _transfer().
- */
 contract MMMToken is ERC20, Ownable2Step {
-    uint16 public constant BPS_DENOMINATOR = 10_000;
-    uint16 public constant MAX_TAX_BPS = 800;
+    // ------------------------- Errors -------------------------
+    error ZeroAddress();
+    error TaxVaultAlreadySet();
+    error PairNotSet();
+    error RouterNotSet();
+    error TaxesDisabled();
+    error InvalidBps();
+    error OnlyTaxVault();
 
+    // ------------------------- Config -------------------------
     address public taxVault;
-    bool public taxVaultSet;
+    bool public taxVaultSetOnce;
 
-    address public pair;
-    address public router;
-
-    uint16 public buyTaxBps;
-    uint16 public sellTaxBps;
+    address public pair;   // MMM/WMON pair
+    address public router; // UniswapV2Router02
 
     bool public taxesEnabled;
+    uint16 public buyTaxBps;  // e.g. 500 = 5%
+    uint16 public sellTaxBps; // e.g. 500 = 5%
 
     mapping(address => bool) public isTaxExempt;
 
-    mapping(address => uint48) public lastNonZeroAt;
+    // last timestamp user had non-zero balance
+    mapping(address => uint256) public lastNonZeroAt;
 
-    event TaxVaultSet(address indexed taxVault);
+    // ------------------------- Events -------------------------
+    event TaxVaultSet(address indexed vault);
     event PairSet(address indexed pair);
-    event RouterSet(address indexed oldRouter, address indexed newRouter);
-    event TaxesUpdated(uint16 buyTaxBps, uint16 sellTaxBps);
+    event RouterSet(address indexed router);
+    event TaxesSet(uint16 buyBps, uint16 sellBps);
     event TaxesEnabledSet(bool enabled);
-    event TaxExemptSet(address indexed account, bool isExempt);
-    event TaxTaken(address indexed from, address indexed to, uint256 grossAmount, uint256 taxAmount, address indexed taxVault);
-
-    error ZeroAddress();
-    error TaxVaultAlreadySet();
-    error TaxVaultNotSet();
-    error TaxesAlreadyEnabled();
-    error TaxTooHigh();
+    event TaxExemptSet(address indexed who, bool exempt);
 
     constructor(
         string memory name_,
         string memory symbol_,
         uint256 initialSupply,
         address owner_
-    )
-        ERC20(name_, symbol_)
-        Ownable(owner_)
-    {
+    ) ERC20(name_, symbol_) {
         if (owner_ == address(0)) revert ZeroAddress();
-
         _mint(owner_, initialSupply);
-        lastNonZeroAt[owner_] = uint48(block.timestamp);
+        _transferOwnership(owner_);
 
-        taxesEnabled = false;
-        buyTaxBps = 500;
-        sellTaxBps = 500;
+        // Owner is exempt by default (operational convenience)
+        isTaxExempt[owner_] = true;
+        emit TaxExemptSet(owner_, true);
+
+        // Initialize lastNonZeroAt for owner if minted > 0
+        if (initialSupply > 0) lastNonZeroAt[owner_] = block.timestamp;
     }
 
-    function setTaxVaultOnce(address taxVault_) external onlyOwner {
-        if (taxVaultSet) revert TaxVaultAlreadySet();
-        if (taxVault_ == address(0)) revert ZeroAddress();
+    // ------------------------- Admin wiring -------------------------
 
-        taxVault = taxVault_;
-        taxVaultSet = true;
-
-        isTaxExempt[taxVault_] = true;
-        emit TaxExemptSet(taxVault_, true);
-
-        emit TaxVaultSet(taxVault_);
+    function setTaxVaultOnce(address vault) external onlyOwner {
+        if (taxVaultSetOnce) revert TaxVaultAlreadySet();
+        if (vault == address(0)) revert ZeroAddress();
+        taxVault = vault;
+        taxVaultSetOnce = true;
+        emit TaxVaultSet(vault);
     }
 
     function setPair(address pair_) external onlyOwner {
@@ -88,96 +74,98 @@ contract MMMToken is ERC20, Ownable2Step {
 
     function setRouter(address router_) external onlyOwner {
         if (router_ == address(0)) revert ZeroAddress();
-
-        address old = router;
-        if (old != address(0)) {
-            isTaxExempt[old] = false;
-            emit TaxExemptSet(old, false);
-        }
-
         router = router_;
-        isTaxExempt[router_] = true;
-        emit TaxExemptSet(router_, true);
-
-        emit RouterSet(old, router_);
+        emit RouterSet(router_);
     }
 
     function setTaxes(uint16 buyBps, uint16 sellBps) external onlyOwner {
-        if (buyBps > MAX_TAX_BPS || sellBps > MAX_TAX_BPS) revert TaxTooHigh();
+        // hard cap for safety
+        if (buyBps > 2000 || sellBps > 2000) revert InvalidBps();
         buyTaxBps = buyBps;
         sellTaxBps = sellBps;
-        emit TaxesUpdated(buyBps, sellBps);
-    }
-
-    function setTaxExempt(address account, bool exempt) external onlyOwner {
-        if (account == address(0)) revert ZeroAddress();
-        isTaxExempt[account] = exempt;
-        emit TaxExemptSet(account, exempt);
+        emit TaxesSet(buyBps, sellBps);
     }
 
     function setTaxesEnabled(bool enabled) external onlyOwner {
-        if (enabled) {
-            if (!taxVaultSet) revert TaxVaultNotSet();
-            if (taxesEnabled) revert TaxesAlreadyEnabled();
-        }
         taxesEnabled = enabled;
         emit TaxesEnabledSet(enabled);
     }
 
-    function _update(address from, address to, uint256 value) internal override {
-        uint256 fromBalBefore = (from == address(0)) ? 0 : balanceOf(from);
-        uint256 toBalBefore = (to == address(0)) ? 0 : balanceOf(to);
-
-        if (from == address(0) || to == address(0)) {
-            super._update(from, to, value);
-
-            if (from != address(0)) _updateLastNonZeroAt(from, fromBalBefore, balanceOf(from));
-            if (to != address(0)) _updateLastNonZeroAt(to, toBalBefore, balanceOf(to));
-            return;
-        }
-
-        bool canTax = taxesEnabled && taxVaultSet && pair != address(0);
-
-        if (
-            canTax &&
-            !isTaxExempt[from] &&
-            !isTaxExempt[to] &&
-            from != router &&
-            to != router
-        ) {
-            uint16 taxBps = 0;
-            if (from == pair) taxBps = buyTaxBps;
-            else if (to == pair) taxBps = sellTaxBps;
-
-            if (taxBps != 0) {
-                uint256 taxAmount = (value * taxBps) / BPS_DENOMINATOR;
-                uint256 netAmount = value - taxAmount;
-
-                super._update(from, taxVault, taxAmount);
-                super._update(from, to, netAmount);
-
-                emit TaxTaken(from, to, value, taxAmount, taxVault);
-
-                _updateLastNonZeroAt(from, fromBalBefore, balanceOf(from));
-                _updateLastNonZeroAt(to, toBalBefore, balanceOf(to));
-                return;
-            }
-        }
-
-        super._update(from, to, value);
-
-        _updateLastNonZeroAt(from, fromBalBefore, balanceOf(from));
-        _updateLastNonZeroAt(to, toBalBefore, balanceOf(to));
+    function setTaxExempt(address who, bool exempt) external onlyOwner {
+        if (who == address(0)) revert ZeroAddress();
+        isTaxExempt[who] = exempt;
+        emit TaxExemptSet(who, exempt);
     }
 
-    function _updateLastNonZeroAt(address user, uint256 balBefore, uint256 balAfter) internal {
-        if (balBefore == 0 && balAfter > 0) {
-            lastNonZeroAt[user] = uint48(block.timestamp);
+    // ------------------------- Views -------------------------
+
+    function isBuy(address from, address to) public view returns (bool) {
+        return from == pair && to != address(0);
+    }
+
+    function isSell(address from, address to) public view returns (bool) {
+        return to == pair && from != address(0);
+    }
+
+    // ------------------------- Internal transfer with tax -------------------------
+
+    function _updateLastNonZero(address a, uint256 newBal) internal {
+        if (a == address(0)) return;
+        if (newBal > 0) {
+            // if it was previously 0, stamp it
+            if (lastNonZeroAt[a] == 0) lastNonZeroAt[a] = block.timestamp;
+        } else {
+            // when going to 0, keep the timestamp at 0 (means "not holding")
+            lastNonZeroAt[a] = 0;
+        }
+    }
+
+    function _afterTokenTransfer(address from, address to) internal {
+        _updateLastNonZero(from, balanceOf(from));
+        _updateLastNonZero(to, balanceOf(to));
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal override {
+        if (from == address(0) || to == address(0)) {
+            super._transfer(from, to, amount);
             return;
         }
-        if (balBefore > 0 && balAfter == 0) {
-            lastNonZeroAt[user] = 0;
+
+        // stamp lastNonZeroAt on first ever acquisition
+        if (balanceOf(to) == 0 && amount > 0) {
+            lastNonZeroAt[to] = block.timestamp;
+        }
+
+        bool takeTax =
+            taxesEnabled &&
+            taxVault != address(0) &&
+            !isTaxExempt[from] &&
+            !isTaxExempt[to] &&
+            pair != address(0);
+
+        if (!takeTax) {
+            super._transfer(from, to, amount);
+            _afterTokenTransfer(from, to);
             return;
         }
+
+        uint256 taxBps = 0;
+        if (isBuy(from, to)) taxBps = buyTaxBps;
+        else if (isSell(from, to)) taxBps = sellTaxBps;
+
+        if (taxBps == 0) {
+            super._transfer(from, to, amount);
+            _afterTokenTransfer(from, to);
+            return;
+        }
+
+        uint256 tax = (amount * taxBps) / 10_000;
+        uint256 net = amount - tax;
+
+        // send tax to vault, remainder to recipient
+        super._transfer(from, taxVault, tax);
+        super._transfer(from, to, net);
+
+        _afterTokenTransfer(from, to);
     }
 }
