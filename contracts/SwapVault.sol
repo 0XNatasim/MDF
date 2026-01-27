@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-interface IUniswapV2Router02Like {
+interface IRouterLike {
     function swapExactTokensForTokensSupportingFeeOnTransferTokens(
         uint amountIn,
         uint amountOutMin,
@@ -29,92 +29,64 @@ interface IUniswapV2Router02Like {
 contract SwapVault is Ownable2Step {
     using SafeERC20 for IERC20;
 
-    error ZeroAddress();
-    error OnlyTaxVault(address caller);
-    error RouterMissing();
-
     IERC20 public immutable mmm;
     IERC20 public immutable wmon;
 
-    address public taxVault;
-    bool public taxVaultSetOnce;
-
     address public router;
+    address public taxVault;
 
-    event TaxVaultSet(address indexed taxVault);
-    event RouterSet(address indexed router);
-    event LiquidityAdded(uint256 mmmIn, uint256 wmonIn, uint256 lpOut);
+    error OnlyTaxVault();
+    error RouterNotSet();
 
-    constructor(address mmmToken, address wmonToken, address initialOwner) Ownable2Step() {
-        if (mmmToken == address(0) || wmonToken == address(0) || initialOwner == address(0)) revert ZeroAddress();
-        mmm = IERC20(mmmToken);
-        wmon = IERC20(wmonToken);
-        _transferOwnership(initialOwner);
+    constructor(address mmm_, address wmon_, address owner_) {
+        mmm = IERC20(mmm_);
+        wmon = IERC20(wmon_);
+        _transferOwnership(owner_);
     }
 
-    function setTaxVaultOnce(address taxVault_) external onlyOwner {
-        if (taxVaultSetOnce) revert("TaxVaultAlreadySet");
-        if (taxVault_ == address(0)) revert ZeroAddress();
-        taxVault = taxVault_;
-        taxVaultSetOnce = true;
-        emit TaxVaultSet(taxVault_);
+    function setRouter(address r) external onlyOwner {
+        router = r;
     }
 
-    function setRouter(address router_) external onlyOwner {
-        if (router_ == address(0)) revert ZeroAddress();
-        router = router_;
-        emit RouterSet(router_);
+    function setTaxVault(address tv) external onlyOwner {
+        taxVault = tv;
     }
 
-    function processLiquidity(
-        uint256 mmmAmount,
-        uint256 minWmonOut,
-        uint256 minMmmAdd,
-        uint256 minWmonAdd,
-        uint256 deadline
-    ) external returns (uint256 lpOut) {
-        if (msg.sender != taxVault) revert OnlyTaxVault(msg.sender);
-        if (router == address(0)) revert RouterMissing();
-        if (mmmAmount == 0) return 0;
+    function processLiquidity(uint256 amountIn) external {
+        if (msg.sender != taxVault) revert OnlyTaxVault();
+        if (router == address(0)) revert RouterNotSet();
 
-        // split MMM in half
-        uint256 half = mmmAmount / 2;
-        uint256 otherHalf = mmmAmount - half;
+        uint256 swapAmount = amountIn / 2;
+        uint256 keepAmount = amountIn - swapAmount;
 
-        // approve router for MMM
-        mmm.safeIncreaseAllowance(router, mmmAmount);
+        mmm.safeIncreaseAllowance(router, swapAmount);
 
-        // swap half MMM -> WMON
         address;
         path[0] = address(mmm);
         path[1] = address(wmon);
 
-        uint256 wBefore = wmon.balanceOf(address(this));
-        IUniswapV2Router02Like(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            half,
-            minWmonOut,
+        IRouterLike(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            swapAmount,
+            0,
             path,
             address(this),
-            deadline
+            block.timestamp
         );
-        uint256 wGained = wmon.balanceOf(address(this)) - wBefore;
 
-        // approve router for WMON
-        wmon.safeIncreaseAllowance(router, wGained);
+        uint256 wmonBal = wmon.balanceOf(address(this));
+        mmm.safeIncreaseAllowance(router, keepAmount);
+        wmon.safeIncreaseAllowance(router, wmonBal);
 
-        // add liquidity MMM + WMON, LP stays in this vault for now
-        (,, uint liq) = IUniswapV2Router02Like(router).addLiquidity(
+        IRouterLike(router).addLiquidity(
             address(mmm),
             address(wmon),
-            otherHalf,
-            wGained,
-            minMmmAdd,
-            minWmonAdd,
+            keepAmount,
+            wmonBal,
+            0,
+            0,
             address(this),
-            deadline
+            block.timestamp
         );
-
-        lpOut = liq;
-        emit LiquidityAdded(otherHalf, wGained, liq);
     }
 }
+
