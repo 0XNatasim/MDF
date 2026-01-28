@@ -186,7 +186,8 @@ contract TaxVault is Ownable2Step {
             // approve router
             mmm.safeIncreaseAllowance(router, toUsdcMmm);
 
-            address;
+            // Create path array for MMM -> WMON -> USDC swap
+            address[] memory path = new address[](3);
             path[0] = address(mmm);
             path[1] = address(wmon);
             path[2] = address(usdc);
