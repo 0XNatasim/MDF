@@ -28,6 +28,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     error ZeroAmount();
     error EligibleSupplyZero();
     error ZeroAddress();
+    error BoostVaultAlreadySet();
 
     uint256 public constant ACC_SCALE = 1e18;
 
@@ -70,13 +71,12 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         uint48 _claimCooldown,
         uint256 _minBalance,
         address initialOwner
-    ) Ownable2Step() {
+    ) Ownable2Step(initialOwner) {
         if (_mmm == address(0) || initialOwner == address(0)) revert ZeroAddress();
         mmm = IMMMToken(_mmm);
         minHoldTimeSec = _minHoldTimeSec;
         claimCooldown  = _claimCooldown;
         minBalance     = _minBalance;
-        _transferOwnership(initialOwner);
     }
 
     // ------------------------- View helpers -------------------------
@@ -110,7 +110,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     // ------------------------- Admin -------------------------
 
     function setBoostVaultOnce(address boostVault_) external onlyOwner {
-        if (boostVaultSetOnce) revert("BoostVaultAlreadySet");
+        if (boostVaultSetOnce) revert BoostVaultAlreadySet();
         if (boostVault_ == address(0)) revert ZeroAddress();
         boostVault = boostVault_;
         boostVaultSetOnce = true;
@@ -137,15 +137,12 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
     }
 
     // ------------------------- Distribution -------------------------
-    // RewardVault is funded by TaxVault transferring MMM here.
-    // Owner (or a keeper you choose) calls notifyRewardAmount(amount) to account it.
 
     function notifyRewardAmount(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 denom = eligibleSupply();
         if (denom == 0) revert EligibleSupplyZero();
 
-        // We assume MMM already transferred into this vault by TaxVault before calling notify.
         accRewardPerToken += (amount * ACC_SCALE) / denom;
         totalDistributed  += amount;
 

@@ -20,7 +20,6 @@ interface IERC721Like {
  *
  * Bonus paid = baseClaim * (multiplier - 1)
  * baseClaim is MMM amount from RewardVault; bonus is USDC, so this is "value policy"
- * (you can later adjust bonus scaling logic if you want strict USD parity).
  */
 contract BoostVault is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -50,10 +49,11 @@ contract BoostVault is Ownable2Step {
     error InvalidMultiplier();
     error CannotRescueUSDC();
 
-    constructor(address usdcToken, address initialOwner) Ownable2Step() {
+    constructor(address usdcToken, address initialOwner)
+        Ownable2Step(initialOwner)
+    {
         if (usdcToken == address(0) || initialOwner == address(0)) revert ZeroAddress();
         usdc = IERC20(usdcToken);
-        _transferOwnership(initialOwner);
     }
 
     function setRewardVaultOnce(address rewardVault_) external onlyOwner {

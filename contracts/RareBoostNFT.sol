@@ -7,9 +7,10 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 contract RareBoostNFT is ERC721, Ownable2Step {
     uint256 public nextId = 1;
 
-    constructor(address initialOwner) ERC721("MMM Rare Boost", "MMM-RARE") {
-        _transferOwnership(initialOwner);
-    }
+    constructor(address initialOwner)
+        ERC721("MMM Rare Boost", "MMM-RARE")
+        Ownable2Step(initialOwner)
+    {}
 
     function mint(address to) external onlyOwner returns (uint256 id) {
         id = nextId++;

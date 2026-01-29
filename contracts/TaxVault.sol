@@ -24,7 +24,6 @@ contract TaxVault is Ownable2Step {
     error InvalidBps();
     error AmountZero();
     error RouterMissing();
-    error SwapFailed();
     error OnlyOwnerOrKeeper();
 
     // ------------------------- Constants -------------------------
@@ -80,12 +79,13 @@ contract TaxVault is Ownable2Step {
         address usdcToken,
         address wmonToken,
         address initialOwner
-    ) Ownable2Step() {
-        if (mmmToken == address(0) || usdcToken == address(0) || wmonToken == address(0) || initialOwner == address(0)) revert ZeroAddress();
+    ) Ownable2Step(initialOwner) {
+        if (mmmToken == address(0) || usdcToken == address(0) || wmonToken == address(0) || initialOwner == address(0)) {
+            revert ZeroAddress();
+        }
         mmm = IERC20(mmmToken);
         usdc = IERC20(usdcToken);
         wmon = IERC20(wmonToken);
-        _transferOwnership(initialOwner);
     }
 
     // ------------------------- Admin -------------------------
@@ -160,9 +160,13 @@ contract TaxVault is Ownable2Step {
 
     function process(uint256 mmmAmount, uint256 minUsdcOut, uint256 deadline) external onlyOwnerOrKeeper {
         if (mmmAmount == 0) revert AmountZero();
-        if (rewardVault == address(0) || boostVault == address(0) || swapVault == address(0) || marketingVault == address(0) || teamVestingVault == address(0)) {
-            revert NotWired();
-        }
+        if (
+            rewardVault == address(0) ||
+            boostVault == address(0) ||
+            swapVault == address(0) ||
+            marketingVault == address(0) ||
+            teamVestingVault == address(0)
+        ) revert NotWired();
 
         // compute MMM splits
         uint256 toReward = (mmmAmount * bpsReward) / BPS;
@@ -186,29 +190,25 @@ contract TaxVault is Ownable2Step {
             // approve router
             mmm.safeIncreaseAllowance(router, toUsdcMmm);
 
-            // Create path array for MMM -> WMON -> USDC swap
-            address[] memory path = new address[](3);
+            // MMM -> WMON -> USDC
+            address;
             path[0] = address(mmm);
             path[1] = address(wmon);
             path[2] = address(usdc);
 
             uint256 beforeBal = usdc.balanceOf(address(this));
-            uint[] memory amts = IUniswapV2Router02(router).swapExactTokensForTokens(
+            IUniswapV2Router02(router).swapExactTokensForTokens(
                 toUsdcMmm,
                 minUsdcOut,
                 path,
                 address(this),
                 deadline
             );
-            // amts[amts.length - 1] is expected output, but we trust balance delta
             uint256 afterBal = usdc.balanceOf(address(this));
             usdcOut = afterBal - beforeBal;
-
-            // (optional) reset allowance to 0 is not necessary, but okay
         }
 
         // 3) Split USDC output by bps proportions of USDC legs
-        // total USDC legs = bpsBoost + bpsMkt + bpsTeam = 2500 + 700 + 300 = 3500
         uint256 denom = uint256(bpsBoost) + bpsMkt + bpsTeam;
         uint256 toBoost = denom == 0 ? 0 : (usdcOut * bpsBoost) / denom;
         uint256 toMkt   = denom == 0 ? 0 : (usdcOut * bpsMkt) / denom;

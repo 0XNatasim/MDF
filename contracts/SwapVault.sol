@@ -1,3 +1,4 @@
+// File: contracts/SwapVault.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
@@ -29,9 +30,6 @@ interface IRouterLike {
 /**
  * SwapVault (v1)
  * Receives MMM from TaxVault (15% slice) and adds MMM/WMON liquidity via Router.
- *
- * NOTE (testnet): you can deploy your own UniswapV2Factory/Router02 + WETH9-as-WMON mock.
- * NOTE (mainnet): set non-zero slippage mins + consider TWAP protections.
  */
 contract SwapVault is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -42,10 +40,9 @@ contract SwapVault is Ownable2Step {
     address public router;
     address public taxVault;
 
-    // Where LP tokens are sent. For now can be this contract.
+    // LP token receiver
     address public lpReceiver;
 
-    // Optional “set once” safety toggles
     bool public routerSetOnce;
     bool public taxVaultSetOnce;
 
@@ -71,12 +68,13 @@ contract SwapVault is Ownable2Step {
         uint256 liquidityMinted
     );
 
-    constructor(address mmm_, address wmon_, address owner_) {
+    constructor(address mmm_, address wmon_, address owner_)
+        Ownable2Step(owner_)
+    {
         if (mmm_ == address(0) || wmon_ == address(0) || owner_ == address(0)) revert ZeroAddress();
         mmm = IERC20(mmm_);
         wmon = IERC20(wmon_);
         lpReceiver = address(this);
-        _transferOwnership(owner_);
     }
 
     // ----------------- Admin wiring -----------------
@@ -117,73 +115,60 @@ contract SwapVault is Ownable2Step {
 
     // ----------------- Core flow -----------------
 
-    /**
-     * TaxVault calls this with the MMM amount allocated to liquidity (15% of tax pot).
-     * This contract must already hold at least `amountIn` MMM.
-     *
-     * For fee-on-transfer tokens, we use the supportingFeeOnTransfer swap method.
-     * Slippage mins are set to 0 for now (OK for testnet plumbing; NOT OK for mainnet).
-     */
-       function processLiquidity(uint256 amountIn) external {
+    function processLiquidity(uint256 amountIn) external {
         if (taxVault == address(0)) revert TaxVaultNotSet();
         if (msg.sender != taxVault) revert OnlyTaxVault(msg.sender);
         if (router == address(0)) revert RouterNotSet();
-       if (amountIn == 0) return;
+        if (amountIn == 0) return;
 
-       // Split MMM into: half swap to WMON, half keep as MMM
-       uint256 swapAmount = amountIn / 2;
-      uint256 keepAmount = amountIn - swapAmount;
+        uint256 swapAmount = amountIn / 2;
+        uint256 keepAmount = amountIn - swapAmount;
 
-      // --- swap MMM -> WMON ---
-      _forceApprove(mmm, router, swapAmount);
+        // --- swap MMM -> WMON ---
+        _forceApprove(mmm, router, swapAmount);
 
-      address[] memory path = new address[](2);
-      path[0] = address(mmm);
-      path[1] = address(wmon);
+        address;
+        path[0] = address(mmm);
+        path[1] = address(wmon);
 
-      IRouterLike(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(
-          swapAmount,
+        IRouterLike(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            swapAmount,
             0, // TODO mainnet: set minOut
-          path,
-          address(this),
-          block.timestamp
-      );
+            path,
+            address(this),
+            block.timestamp
+        );
 
-      uint256 wmonBal = wmon.balanceOf(address(this));
+        uint256 wmonBal = wmon.balanceOf(address(this));
 
-      // --- add liquidity MMM + WMON ---
-      _forceApprove(mmm, router, keepAmount);
-      _forceApprove(wmon, router, wmonBal);
+        // --- add liquidity MMM + WMON ---
+        _forceApprove(mmm, router, keepAmount);
+        _forceApprove(wmon, router, wmonBal);
 
-      (uint amountAUsed, uint amountBUsed, uint liquidityMinted) = IRouterLike(router).addLiquidity(
-          address(mmm),
-          address(wmon),
-          keepAmount,
-          wmonBal,
-            0, // TODO mainnet: amountAMin
-            0, // TODO mainnet: amountBMin
-          lpReceiver,
-          block.timestamp
-      );
+        (uint amountAUsed, uint amountBUsed, uint liquidityMinted) =
+            IRouterLike(router).addLiquidity(
+                address(mmm),
+                address(wmon),
+                keepAmount,
+                wmonBal,
+                0, // TODO mainnet: amountAMin
+                0, // TODO mainnet: amountBMin
+                lpReceiver,
+                block.timestamp
+            );
 
-      emit LiquidityProcessed(
-          amountIn,
-          swapAmount,
-          keepAmount,
-          wmonBal,
-          amountAUsed,
-          amountBUsed,
-          liquidityMinted
-      );
+        emit LiquidityProcessed(
+            amountIn,
+            swapAmount,
+            keepAmount,
+            wmonBal,
+            amountAUsed,
+            amountBUsed,
+            liquidityMinted
+        );
     }
 
-    // ----------------- Internal helpers -----------------
-
-    /**
-     * Some ERC20s require allowance to be set to 0 before changing it.
-     * This avoids “approve front-running” patterns and token quirks.
-     */
     function _forceApprove(IERC20 token, address spender, uint256 amount) internal {
-    SafeERC20.forceApprove(token, spender, amount);
+        SafeERC20.forceApprove(token, spender, amount);
     }
 }

@@ -7,9 +7,10 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 contract CommonBoostNFT is ERC721, Ownable2Step {
     uint256 public nextId = 1;
 
-    constructor(address initialOwner) ERC721("MMM Common Boost", "MMM-COMMON") {
-        _transferOwnership(initialOwner);
-    }
+    constructor(address initialOwner)
+        ERC721("MMM Common Boost", "MMM-COMMON")
+        Ownable2Step(initialOwner)
+    {}
 
     function mint(address to) external onlyOwner returns (uint256 id) {
         id = nextId++;

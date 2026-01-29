@@ -8,18 +8,14 @@ contract MMMToken is ERC20, Ownable2Step {
     // ------------------------- Errors -------------------------
     error ZeroAddress();
     error TaxVaultAlreadySet();
-    error PairNotSet();
-    error RouterNotSet();
-    error TaxesDisabled();
     error InvalidBps();
-    error OnlyTaxVault();
 
     // ------------------------- Config -------------------------
     address public taxVault;
     bool public taxVaultSetOnce;
 
     address public pair;   // MMM/WMON pair
-    address public router; // UniswapV2Router02
+    address public router; // UniswapV2Router02 (stored for wiring/UI; not used internally)
 
     bool public taxesEnabled;
     uint16 public buyTaxBps;  // e.g. 500 = 5%
@@ -43,12 +39,15 @@ contract MMMToken is ERC20, Ownable2Step {
         string memory symbol_,
         uint256 initialSupply,
         address owner_
-    ) ERC20(name_, symbol_) {
+    )
+        ERC20(name_, symbol_)
+        Ownable2Step(owner_)
+    {
         if (owner_ == address(0)) revert ZeroAddress();
-        _mint(owner_, initialSupply);
-        _transferOwnership(owner_);
 
-        // Owner is exempt by default (operational convenience)
+        _mint(owner_, initialSupply);
+
+        // Owner exempt by default (operational convenience)
         isTaxExempt[owner_] = true;
         emit TaxExemptSet(owner_, true);
 
@@ -107,33 +106,28 @@ contract MMMToken is ERC20, Ownable2Step {
         return to == pair && from != address(0);
     }
 
-    // ------------------------- Internal transfer with tax -------------------------
+    // ------------------------- lastNonZero bookkeeping -------------------------
 
-    function _updateLastNonZero(address a, uint256 newBal) internal {
+    function _syncLastNonZero(address a) internal {
         if (a == address(0)) return;
-        if (newBal > 0) {
-            // if it was previously 0, stamp it
-            if (lastNonZeroAt[a] == 0) lastNonZeroAt[a] = block.timestamp;
-        } else {
-            // when going to 0, keep the timestamp at 0 (means "not holding")
+
+        uint256 bal = balanceOf(a);
+        if (bal == 0) {
             lastNonZeroAt[a] = 0;
+        } else {
+            if (lastNonZeroAt[a] == 0) lastNonZeroAt[a] = block.timestamp;
         }
     }
 
-    function _afterTokenTransfer(address from, address to) internal {
-        _updateLastNonZero(from, balanceOf(from));
-        _updateLastNonZero(to, balanceOf(to));
-    }
-
-    function _transfer(address from, address to, uint256 amount) internal override {
+    // ------------------------- OZ v5 hook -------------------------
+    // In OZ v5, customize transfers by overriding _update (NOT _transfer).
+    function _update(address from, address to, uint256 amount) internal override {
+        // Mint / burn => no tax
         if (from == address(0) || to == address(0)) {
-            super._transfer(from, to, amount);
+            super._update(from, to, amount);
+            _syncLastNonZero(from);
+            _syncLastNonZero(to);
             return;
-        }
-
-        // stamp lastNonZeroAt on first ever acquisition
-        if (balanceOf(to) == 0 && amount > 0) {
-            lastNonZeroAt[to] = block.timestamp;
         }
 
         bool takeTax =
@@ -144,8 +138,9 @@ contract MMMToken is ERC20, Ownable2Step {
             pair != address(0);
 
         if (!takeTax) {
-            super._transfer(from, to, amount);
-            _afterTokenTransfer(from, to);
+            super._update(from, to, amount);
+            _syncLastNonZero(from);
+            _syncLastNonZero(to);
             return;
         }
 
@@ -154,18 +149,20 @@ contract MMMToken is ERC20, Ownable2Step {
         else if (isSell(from, to)) taxBps = sellTaxBps;
 
         if (taxBps == 0) {
-            super._transfer(from, to, amount);
-            _afterTokenTransfer(from, to);
+            super._update(from, to, amount);
+            _syncLastNonZero(from);
+            _syncLastNonZero(to);
             return;
         }
 
         uint256 tax = (amount * taxBps) / 10_000;
         uint256 net = amount - tax;
 
-        // send tax to vault, remainder to recipient
-        super._transfer(from, taxVault, tax);
-        super._transfer(from, to, net);
+        if (tax > 0) super._update(from, taxVault, tax);
+        super._update(from, to, net);
 
-        _afterTokenTransfer(from, to);
+        _syncLastNonZero(from);
+        _syncLastNonZero(to);
+        _syncLastNonZero(taxVault);
     }
 }

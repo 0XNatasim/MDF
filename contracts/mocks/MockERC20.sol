@@ -12,9 +12,11 @@ contract MockERC20 is ERC20, Ownable2Step {
         string memory symbol_,
         uint8 decimals_,
         address owner_
-    ) ERC20(name_, symbol_) {
+    )
+        ERC20(name_, symbol_)
+        Ownable2Step(owner_)
+    {
         _decimals = decimals_;
-        _transferOwnership(owner_);
     }
 
     function decimals() public view override returns (uint8) {
