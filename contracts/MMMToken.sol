@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract MMMToken is ERC20, Ownable2Step {
+contract MMMToken is ERC20, Ownable {
     // ------------------------- Errors -------------------------
     error ZeroAddress();
     error TaxVaultAlreadySet();
@@ -41,7 +41,7 @@ contract MMMToken is ERC20, Ownable2Step {
         address owner_
     )
         ERC20(name_, symbol_)
-        Ownable2Step(owner_)
+        Ownable(owner_)
     {
         if (owner_ == address(0)) revert ZeroAddress();
 

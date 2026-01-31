@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IERC20Like {
@@ -18,7 +18,7 @@ interface IBoostVault {
     function claimBonus(address user, uint256 baseAmount) external returns (uint256 paidBonus);
 }
 
-contract RewardVault is Ownable2Step, ReentrancyGuard {
+contract RewardVault is Ownable, ReentrancyGuard {
     // ------------------------- Errors -------------------------
     error NothingToClaim();
     error ExcludedFromRewards(address who);
@@ -71,7 +71,7 @@ contract RewardVault is Ownable2Step, ReentrancyGuard {
         uint48 _claimCooldown,
         uint256 _minBalance,
         address initialOwner
-    ) Ownable2Step(initialOwner) {
+    ) Ownable(initialOwner) {
         if (_mmm == address(0) || initialOwner == address(0)) revert ZeroAddress();
         mmm = IMMMToken(_mmm);
         minHoldTimeSec = _minHoldTimeSec;

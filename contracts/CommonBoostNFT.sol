@@ -2,14 +2,14 @@
 pragma solidity ^0.8.24;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract CommonBoostNFT is ERC721, Ownable2Step {
+contract CommonBoostNFT is ERC721, Ownable {
     uint256 public nextId = 1;
 
     constructor(address initialOwner)
         ERC721("MMM Common Boost", "MMM-COMMON")
-        Ownable2Step(initialOwner)
+        Ownable(initialOwner)
     {}
 
     function mint(address to) external onlyOwner returns (uint256 id) {

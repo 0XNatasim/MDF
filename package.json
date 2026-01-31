@@ -10,7 +10,8 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "dotenv": "^17.2.3",
-    "hardhat": "^2.27.1"
+    "hardhat": "^2.27.1",
+    "solc": "^0.8.33"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

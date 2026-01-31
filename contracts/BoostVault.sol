@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IERC721Like {
     function balanceOf(address owner) external view returns (uint256);
@@ -21,7 +21,7 @@ interface IERC721Like {
  * Bonus paid = baseClaim * (multiplier - 1)
  * baseClaim is MMM amount from RewardVault; bonus is USDC, so this is "value policy"
  */
-contract BoostVault is Ownable2Step {
+contract BoostVault is Ownable {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS = 10_000;
@@ -50,7 +50,7 @@ contract BoostVault is Ownable2Step {
     error CannotRescueUSDC();
 
     constructor(address usdcToken, address initialOwner)
-        Ownable2Step(initialOwner)
+        Ownable(initialOwner)
     {
         if (usdcToken == address(0) || initialOwner == address(0)) revert ZeroAddress();
         usdc = IERC20(usdcToken);

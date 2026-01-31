@@ -1,10 +1,10 @@
-// File: contracts/SwapVault.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IRouterLike {
     function swapExactTokensForTokensSupportingFeeOnTransferTokens(
@@ -29,9 +29,14 @@ interface IRouterLike {
 
 /**
  * SwapVault (v1)
- * Receives MMM from TaxVault (15% slice) and adds MMM/WMON liquidity via Router.
+ * Receives MMM from TaxVault and adds MMM/WMON liquidity via Router.
+ *
+ * Notes:
+ * - Uses UniswapV2-style router method "SupportingFeeOnTransferTokens"
+ * - Slippage mins = 0 (OK for testnet plumbing; NOT OK for mainnet)
+ * - OZ v5: Ownable requires Ownable(initialOwner) in constructor
  */
-contract SwapVault is Ownable2Step {
+contract SwapVault is Ownable {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable mmm;
@@ -40,9 +45,10 @@ contract SwapVault is Ownable2Step {
     address public router;
     address public taxVault;
 
-    // LP token receiver
+    // Where LP tokens are sent. For now can be this contract.
     address public lpReceiver;
 
+    // Optional “set once” safety toggles
     bool public routerSetOnce;
     bool public taxVaultSetOnce;
 
@@ -68,10 +74,10 @@ contract SwapVault is Ownable2Step {
         uint256 liquidityMinted
     );
 
-    constructor(address mmm_, address wmon_, address owner_)
-        Ownable2Step(owner_)
+    constructor(address mmm_, address wmon_, address initialOwner)
+        Ownable(initialOwner)
     {
-        if (mmm_ == address(0) || wmon_ == address(0) || owner_ == address(0)) revert ZeroAddress();
+        if (mmm_ == address(0) || wmon_ == address(0) || initialOwner == address(0)) revert ZeroAddress();
         mmm = IERC20(mmm_);
         wmon = IERC20(wmon_);
         lpReceiver = address(this);
@@ -127,13 +133,13 @@ contract SwapVault is Ownable2Step {
         // --- swap MMM -> WMON ---
         _forceApprove(mmm, router, swapAmount);
 
-        address;
+        address[] memory path = new address[](2);
         path[0] = address(mmm);
         path[1] = address(wmon);
 
         IRouterLike(router).swapExactTokensForTokensSupportingFeeOnTransferTokens(
             swapAmount,
-            0, // TODO mainnet: set minOut
+            0,
             path,
             address(this),
             block.timestamp
@@ -145,17 +151,16 @@ contract SwapVault is Ownable2Step {
         _forceApprove(mmm, router, keepAmount);
         _forceApprove(wmon, router, wmonBal);
 
-        (uint amountAUsed, uint amountBUsed, uint liquidityMinted) =
-            IRouterLike(router).addLiquidity(
-                address(mmm),
-                address(wmon),
-                keepAmount,
-                wmonBal,
-                0, // TODO mainnet: amountAMin
-                0, // TODO mainnet: amountBMin
-                lpReceiver,
-                block.timestamp
-            );
+        (uint amountAUsed, uint amountBUsed, uint liquidityMinted) = IRouterLike(router).addLiquidity(
+            address(mmm),
+            address(wmon),
+            keepAmount,
+            wmonBal,
+            0,
+            0,
+            lpReceiver,
+            block.timestamp
+        );
 
         emit LiquidityProcessed(
             amountIn,
@@ -168,7 +173,11 @@ contract SwapVault is Ownable2Step {
         );
     }
 
+    // ----------------- Internal helpers -----------------
+
     function _forceApprove(IERC20 token, address spender, uint256 amount) internal {
-        SafeERC20.forceApprove(token, spender, amount);
+        // OZ v5: use forceApprove (handles tokens that require resetting allowance)
+        token.forceApprove(spender, amount);
     }
 }
+

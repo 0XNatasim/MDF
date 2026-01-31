@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IUniswapV2Router02 {
     function swapExactTokensForTokens(
@@ -15,7 +15,7 @@ interface IUniswapV2Router02 {
     ) external returns (uint[] memory amounts);
 }
 
-contract TaxVault is Ownable2Step {
+contract TaxVault is Ownable {
     using SafeERC20 for IERC20;
 
     // ------------------------- Errors -------------------------
@@ -79,7 +79,7 @@ contract TaxVault is Ownable2Step {
         address usdcToken,
         address wmonToken,
         address initialOwner
-    ) Ownable2Step(initialOwner) {
+    ) Ownable(initialOwner) {
         if (mmmToken == address(0) || usdcToken == address(0) || wmonToken == address(0) || initialOwner == address(0)) {
             revert ZeroAddress();
         }
@@ -191,7 +191,7 @@ contract TaxVault is Ownable2Step {
             mmm.safeIncreaseAllowance(router, toUsdcMmm);
 
             // MMM -> WMON -> USDC
-            address;
+            address[] memory path = new address[](2);
             path[0] = address(mmm);
             path[1] = address(wmon);
             path[2] = address(usdc);

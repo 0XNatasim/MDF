@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract MockERC20 is ERC20, Ownable2Step {
+contract MockERC20 is ERC20, Ownable {
     uint8 private _decimals;
 
     constructor(
@@ -14,7 +14,7 @@ contract MockERC20 is ERC20, Ownable2Step {
         address owner_
     )
         ERC20(name_, symbol_)
-        Ownable2Step(owner_)
+        Ownable(owner_)
     {
         _decimals = decimals_;
     }
