@@ -4,81 +4,92 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/**
- * MockRouter
- * - NOT a real AMM.
- * - Only for testnet/local compile + basic flow wiring.
- * - swap: pulls tokenIn and sends tokenOut 1:1 (or capped by router balance).
- * - addLiquidity: pulls both tokens and returns "liquidity" as min(a,b).
- */
-contract MockRouter {
+interface IMintableERC20 {
+    function mint(address to, uint256 amount) external;
+}
+
+contract MockRouterV2 {
     using SafeERC20 for IERC20;
 
-    event MockSwap(address indexed tokenIn, address indexed tokenOut, uint amountIn, uint amountOut, address indexed to);
-    event MockAddLiquidity(address indexed tokenA, address indexed tokenB, uint amountA, uint amountB, address indexed to);
+    address public immutable MMM;
+    address public immutable WMON;
+    address public immutable USDC;
 
-    // fund the router with tokenOut so swaps can pay out
-    function fund(address token, uint amount) external {
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+    event MockSwap(
+        address indexed sender,
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        address to
+    );
+
+    event MockAddLiquidity(
+        address indexed tokenA,
+        address indexed tokenB,
+        uint256 amountA,
+        uint256 amountB,
+        address to
+    );
+
+    constructor(address mmm, address wmon, address usdc) {
+        MMM = mmm;
+        WMON = wmon;
+        USDC = usdc;
     }
+
+    /* ------------------------------------------------------------
+        SWAP (Uniswap-compatible)
+    ------------------------------------------------------------ */
 
     function swapExactTokensForTokensSupportingFeeOnTransferTokens(
         uint amountIn,
-        uint amountOutMin,
+        uint,
         address[] calldata path,
         address to,
-        uint deadline
+        uint
     ) external {
-        require(block.timestamp <= deadline, "EXPIRED");
         require(path.length >= 2, "BAD_PATH");
+
         address tokenIn = path[0];
         address tokenOut = path[path.length - 1];
 
-        // pull tokenIn from caller
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        // 1:1 mock pricing (amountOut = amountIn)
-        uint amountOut = amountIn;
-
-        // enforce "min out"
-        require(amountOut >= amountOutMin, "INSUFFICIENT_OUTPUT");
-
-        // pay out tokenOut (cap by router balance)
-        uint balOut = IERC20(tokenOut).balanceOf(address(this));
-        if (amountOut > balOut) amountOut = balOut;
-
-        if (amountOut > 0) {
-            IERC20(tokenOut).safeTransfer(to, amountOut);
+        if (tokenIn == MMM && tokenOut == WMON) {
+            IMintableERC20(WMON).mint(to, amountIn);
+        } 
+        else if (tokenIn == MMM && tokenOut == USDC) {
+            // USDC has 6 decimals, normalize
+            uint256 usdcOut = amountIn / 1e12;
+            IMintableERC20(USDC).mint(to, usdcOut);
+        } 
+        else {
+            revert("PAIR_NOT_SUPPORTED");
         }
 
-        emit MockSwap(tokenIn, tokenOut, amountIn, amountOut, to);
+        emit MockSwap(msg.sender, tokenIn, tokenOut, amountIn, amountIn, to);
     }
+
+    /* ------------------------------------------------------------
+        ADD LIQUIDITY (noop but compatible)
+    ------------------------------------------------------------ */
 
     function addLiquidity(
         address tokenA,
         address tokenB,
         uint amountADesired,
         uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin,
+        uint,
+        uint,
         address to,
-        uint deadline
+        uint
     ) external returns (uint amountA, uint amountB, uint liquidity) {
-        require(block.timestamp <= deadline, "EXPIRED");
+        IERC20(tokenA).safeTransferFrom(msg.sender, address(this), amountADesired);
+        IERC20(tokenB).safeTransferFrom(msg.sender, address(this), amountBDesired);
 
-        // For a mock: use desired as used amounts
-        amountA = amountADesired;
-        amountB = amountBDesired;
+        emit MockAddLiquidity(tokenA, tokenB, amountADesired, amountBDesired, to);
 
-        require(amountA >= amountAMin, "A_MIN");
-        require(amountB >= amountBMin, "B_MIN");
-
-        IERC20(tokenA).safeTransferFrom(msg.sender, address(this), amountA);
-        IERC20(tokenB).safeTransferFrom(msg.sender, address(this), amountB);
-
-        // fake liquidity minted
-        liquidity = amountA < amountB ? amountA : amountB;
-
-        emit MockAddLiquidity(tokenA, tokenB, amountA, amountB, to);
+        return (amountADesired, amountBDesired, 0);
     }
 }

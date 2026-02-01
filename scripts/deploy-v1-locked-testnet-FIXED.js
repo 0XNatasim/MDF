@@ -10,39 +10,54 @@ async function main() {
 
   console.log("=== MMM v1 FULL TESTNET DEPLOY ===");
   console.log("Deployer:", deployer.address);
-  console.log("ChainId :", net.chainId);
+  console.log("ChainId :", net.chainId.toString());
   console.log("");
 
   /* -----------------------------------------------------------
-     1. Deploy Mock WMON (ERC20)
+     1. Deploy Mock WMON
   ------------------------------------------------------------ */
   const MockERC20 = await ethers.getContractFactory("MockERC20");
+
   const wmon = await MockERC20.deploy(
     "Wrapped MON",
     "WMON",
+    18,
     deployer.address
   );
   await wmon.waitForDeployment();
-
   const WMON = await wmon.getAddress();
+  await wmon.mint(deployer.address, ethers.parseUnits("1000000", 18));
   console.log("WMON deployed:", WMON);
 
   /* -----------------------------------------------------------
-     2. Deploy Mock Router
+     2. Deploy Mock USDC
+  ------------------------------------------------------------ */
+  const usdc = await MockERC20.deploy(
+    "USD Coin",
+    "USDC",
+    6,
+    deployer.address
+  );
+  await usdc.waitForDeployment();
+  const USDC = await usdc.getAddress();
+  await usdc.mint(deployer.address, ethers.parseUnits("1000000", 6));
+  console.log("USDC deployed:", USDC);
+
+  /* -----------------------------------------------------------
+     3. Deploy Mock Router
   ------------------------------------------------------------ */
   const MockRouter = await ethers.getContractFactory("MockRouter");
-  const router = await MockRouter.deploy(WMON);
+  const router = await MockRouter.deploy();
   await router.waitForDeployment();
-
   const ROUTER = await router.getAddress();
   console.log("MockRouter deployed:", ROUTER);
 
   /* -----------------------------------------------------------
-     3. Deploy MMMToken
+     4. Deploy MMMToken
   ------------------------------------------------------------ */
-  const MMM_SUPPLY = ethers.parseUnits("1000000000", 18); // 1B
-
   const MMMToken = await ethers.getContractFactory("MMMToken");
+  const MMM_SUPPLY = ethers.parseUnits("1000000000", 18);
+
   const mmm = await MMMToken.deploy(
     "Monad Money Machine",
     "MMM",
@@ -50,52 +65,53 @@ async function main() {
     deployer.address
   );
   await mmm.waitForDeployment();
-
   const MMM = await mmm.getAddress();
   console.log("MMMToken deployed:", MMM);
 
   /* -----------------------------------------------------------
-     4. Deploy TaxVault
+     5. Deploy TaxVault
+     constructor(address mmm, address owner)
   ------------------------------------------------------------ */
   const TaxVault = await ethers.getContractFactory("TaxVault");
-  const taxVault = await TaxVault.deploy(MMM, deployer.address);
+  const taxVault = await TaxVault.deploy(
+    MMM,
+    deployer.address
+  );
   await taxVault.waitForDeployment();
-
   const TAX_VAULT = await taxVault.getAddress();
   console.log("TaxVault deployed:", TAX_VAULT);
 
   /* -----------------------------------------------------------
-     5. Deploy RewardVault (Base rewards in MMM)
+     6. Deploy RewardVault
+     constructor(address mmm, address taxVault, uint48, uint48, uint256, address)
   ------------------------------------------------------------ */
   const RewardVault = await ethers.getContractFactory("RewardVault");
   const rewardVault = await RewardVault.deploy(
     MMM,
     TAX_VAULT,
-    43200, // minHold
-    43200, // cooldown
+    43200,
+    43200,
     ethers.parseUnits("1", 18),
     deployer.address
   );
   await rewardVault.waitForDeployment();
-
   const REWARD_VAULT = await rewardVault.getAddress();
   console.log("RewardVault deployed:", REWARD_VAULT);
 
   /* -----------------------------------------------------------
-     6. Deploy BoostVault (USDC later, mock OK)
+     7. Deploy BoostVault (USDC bonus)
   ------------------------------------------------------------ */
   const BoostVault = await ethers.getContractFactory("BoostVault");
   const boostVault = await BoostVault.deploy(
-    WMON, // placeholder token for testnet
+    USDC,
     deployer.address
   );
   await boostVault.waitForDeployment();
-
   const BOOST_VAULT = await boostVault.getAddress();
   console.log("BoostVault deployed:", BOOST_VAULT);
 
   /* -----------------------------------------------------------
-     7. Deploy SwapVault (MMM / WMON)
+     8. Deploy SwapVault
   ------------------------------------------------------------ */
   const SwapVault = await ethers.getContractFactory("SwapVault");
   const swapVault = await SwapVault.deploy(
@@ -104,63 +120,56 @@ async function main() {
     deployer.address
   );
   await swapVault.waitForDeployment();
-
   const SWAP_VAULT = await swapVault.getAddress();
   console.log("SwapVault deployed:", SWAP_VAULT);
 
   /* -----------------------------------------------------------
-     8. Deploy MarketingVault (2-of-3 multisig)
+     9. MarketingVault (2-of-3 multisig)
   ------------------------------------------------------------ */
+  if (!process.env.DOPTESTNET || !process.env.TESTER || !process.env.CLAIMER) {
+    throw new Error("Missing multisig env vars");
+  }
+
   const MarketingVault = await ethers.getContractFactory("MarketingVault");
   const marketingVault = await MarketingVault.deploy(
-    WMON,
+    USDC,
     [
       process.env.DOPTESTNET,
       process.env.TESTER,
-      process.env.CLAIMER,
-    ],
-    deployer.address
+      process.env.CLAIMER
+    ]
   );
   await marketingVault.waitForDeployment();
-
   const MARKETING_VAULT = await marketingVault.getAddress();
   console.log("MarketingVault deployed:", MARKETING_VAULT);
 
   /* -----------------------------------------------------------
-     9. Deploy TeamVestingVault
+     10. TeamVestingVault (ALREADY DEPLOYED)
   ------------------------------------------------------------ */
-  const TeamVestingVault = await ethers.getContractFactory("TeamVestingVault");
-  const teamVault = await TeamVestingVault.deploy(
-    WMON,
-    process.env.TEAM_VESTING_VAULT,
-    deployer.address
-  );
-  await teamVault.waitForDeployment();
+  const TEAM_VAULT = process.env.TESTNET_TEAM_VESTING_MULTISIG;
+  if (!TEAM_VAULT) throw new Error("Missing TESTNET_TEAM_VESTING_MULTISIG");
 
-  const TEAM_VAULT = await teamVault.getAddress();
-  console.log("TeamVestingVault deployed:", TEAM_VAULT);
+  console.log("Using existing TeamVestingVault:", TEAM_VAULT);
 
   /* -----------------------------------------------------------
-     10. Wire everything
+     11. Wiring (LOCKED)
   ------------------------------------------------------------ */
-  await taxVault.setRewardVault(REWARD_VAULT);
-  await taxVault.setBoostVault(BOOST_VAULT);
-  await taxVault.setSwapVault(SWAP_VAULT);
-  await taxVault.setMarketingVault(MARKETING_VAULT);
-  await taxVault.setTeamVestingVault(TEAM_VAULT);
+  await taxVault.setRewardVaultOnce(REWARD_VAULT);
+  await taxVault.setBoostVaultOnce(BOOST_VAULT);
+  await taxVault.setSwapVaultOnce(SWAP_VAULT);
+  await taxVault.setMarketingVaultOnce(MARKETING_VAULT);
+  await taxVault.setTeamVestingVaultOnce(TEAM_VAULT);
 
-  await swapVault.setRouter(ROUTER);
-  await swapVault.setTaxVault(TAX_VAULT);
+  await swapVault.setRouterOnce(ROUTER);
+  await swapVault.setTaxVaultOnce(TAX_VAULT);
 
   await boostVault.setRewardVaultOnce(REWARD_VAULT);
-
   await mmm.setTaxVaultOnce(TAX_VAULT);
 
-  console.log("");
-  console.log("=== WIRING COMPLETE ===");
+  console.log("✓ Wiring complete");
 
   /* -----------------------------------------------------------
-     11. Write manifest
+     12. Manifest
   ------------------------------------------------------------ */
   const manifest = {
     network: hre.network.name,
@@ -169,6 +178,7 @@ async function main() {
     contracts: {
       MMM,
       WMON,
+      USDC,
       ROUTER,
       TAX_VAULT,
       REWARD_VAULT,
@@ -182,12 +192,11 @@ async function main() {
 
   const outDir = path.join("deployments", hre.network.name);
   fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(outDir, "latest.json"),
+    JSON.stringify(manifest, null, 2)
+  );
 
-  const outPath = path.join(outDir, "latest.json");
-  fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2));
-
-  console.log("Manifest written:", outPath);
-  console.log("");
   console.log("=== TESTNET DEPLOY COMPLETE ===");
 }
 
