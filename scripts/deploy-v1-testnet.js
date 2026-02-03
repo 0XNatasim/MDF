@@ -56,6 +56,8 @@ async function main() {
 
   console.log("USDC deployed:", USDC);
 
+
+
   /* -----------------------------------------------------------
      3. MMMToken
   ------------------------------------------------------------ */
@@ -85,6 +87,20 @@ async function main() {
 
   const ROUTER = await router.getAddress();
   console.log("MockRouter deployed:", ROUTER);
+
+    /* -----------------------------------------------------------
+     2.5 TRANSFER TOKEN OWNERSHIP TO ROUTER (CRITICAL)
+  ------------------------------------------------------------ */
+  console.log("\n=== TRANSFERRING TOKEN OWNERSHIP TO ROUTER ===");
+  let tx;
+  tx = await usdc.transferOwnership(ROUTER);
+  await tx.wait();
+  console.log("✓ USDC ownership → Router");
+  tx = await wmon.transferOwnership(ROUTER);
+  await tx.wait();
+  console.log("✓ WMON ownership → Router");
+  console.log("=== OWNERSHIP TRANSFER COMPLETE ===\n");
+
 
   /* -----------------------------------------------------------
      5. TaxVault

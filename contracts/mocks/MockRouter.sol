@@ -56,17 +56,16 @@ contract MockRouter {
         USDC = usdc;
     }
 
-    /*//////////////////////////////////////////////////////////////
-        SWAP — UniswapV2 compatible (fee-on-transfer safe)
-    //////////////////////////////////////////////////////////////*/
-
+/*//////////////////////////////////////////////////////////////
+    SWAP — UniswapV2 compatible
+//////////////////////////////////////////////////////////////*/
     function swapExactTokensForTokens(
         uint256 amountIn,
-        uint256 /* amountOutMin */,
+        uint256, // amountOutMin (ignored in mock)
         address[] calldata path,
         address to,
-        uint256 /* deadline */
-    ) external {
+        uint256 // deadline (ignored in mock)
+    ) external returns (uint[] memory amounts) {
         require(amountIn > 0, "AMOUNT_ZERO");
         require(path.length >= 2, "BAD_PATH");
         require(to != address(0), "BAD_TO");
@@ -74,16 +73,16 @@ contract MockRouter {
         address tokenIn  = path[0];
         address tokenOut = path[path.length - 1];
 
-        // Pull input token
+        // Pull input token from caller (TaxVault)
         IERC20(tokenIn).safeTransferFrom(
-            msg.sender,
-            address(this),
-            amountIn
+           msg.sender,
+           address(this),
+           amountIn
         );
 
         uint256 amountOut;
 
-        // ---------------------------------------------------------
+       // ---------------------------------------------------------
         // Supported mock routes
         // ---------------------------------------------------------
 
@@ -91,6 +90,10 @@ contract MockRouter {
             // 1:1 MMM -> WMON (18 -> 18)
             amountOut = amountIn;
             IMintableERC20(WMON).mint(to, amountOut);
+        }
+        else if (tokenIn == WMON && tokenOut == MMM) {
+            amountOut = amountIn;
+            IMintableERC20(MMM).mint(to, amountOut);
         }
         else if (tokenIn == MMM && tokenOut == USDC) {
             // MMM (18) -> USDC (6)
@@ -101,14 +104,13 @@ contract MockRouter {
             revert("PAIR_NOT_SUPPORTED");
         }
 
-        emit MockSwap(
-            msg.sender,
-            tokenIn,
-            tokenOut,
-            amountIn,
-            amountOut,
-            to
-        );
+        // ---------------------------------------------------------
+        // Uniswap-style return array (THIS FIXES THE REVERT)
+        // ---------------------------------------------------------
+
+        amounts = new uint[](path.length);
+        amounts[0] = amountIn;
+        amounts[path.length - 1] = amountOut;
     }
 
     /*//////////////////////////////////////////////////////////////
