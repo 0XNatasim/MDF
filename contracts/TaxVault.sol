@@ -1,58 +1,104 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+
+/*//////////////////////////////////////////////////////////////
+                        ROUTER INTERFACE
+//////////////////////////////////////////////////////////////*/
 
 interface IUniswapV2Router02 {
     function swapExactTokensForTokens(
-        uint amountIn,
-        uint amountOutMin,
+        uint256 amountIn,
+        uint256 amountOutMin,
         address[] calldata path,
         address to,
-        uint deadline
-    ) external returns (uint[] memory amounts);
+        uint256 deadline
+    ) external;
 }
+
+/*//////////////////////////////////////////////////////////////
+                            TAX VAULT
+//////////////////////////////////////////////////////////////*/
 
 contract TaxVault is Ownable {
     using SafeERC20 for IERC20;
 
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+
     error ZeroAddress();
     error NotWired();
-    error InvalidBps();
     error AmountZero();
     error RouterMissing();
     error OnlyOwnerOrKeeper();
 
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     uint256 public constant BPS = 10_000;
-    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    address public constant DEAD =
+        0x000000000000000000000000000000000000dEaD;
+
+    /*//////////////////////////////////////////////////////////////
+                              IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
 
     IERC20 public immutable mmm;
     IERC20 public immutable usdc;
     IERC20 public immutable wmon;
 
+    /*//////////////////////////////////////////////////////////////
+                              WIRING
+    //////////////////////////////////////////////////////////////*/
+
     address public rewardVault;
     address public boostVault;
-    address public swapVault;
+    address public swapVault; // reserved for future use
     address public marketingVault;
     address public teamVestingVault;
 
     address public router;
     address public keeper;
 
+    /*//////////////////////////////////////////////////////////////
+                              SPLITS
+    //////////////////////////////////////////////////////////////*/
+
     uint16 public bpsReward = 4000;
     uint16 public bpsBoost  = 2500;
-    uint16 public bpsLiq    = 1500;
     uint16 public bpsBurn   = 1000;
     uint16 public bpsMkt    = 700;
     uint16 public bpsTeam   = 300;
 
-    event Wired(address rewardVault, address boostVault, address swapVault, address marketingVault, address teamVestingVault);
+    /*//////////////////////////////////////////////////////////////
+                                MODE
+    //////////////////////////////////////////////////////////////*/
+
+    // true  = MMM -> USDC (TESTNET / MOCK)
+    // false = MMM -> WMON -> USDC (MAINNET)
+    bool public useDirectUsdcPath = true;
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event Wired(
+        address rewardVault,
+        address boostVault,
+        address swapVault,
+        address marketingVault,
+        address teamVestingVault
+    );
+
     event RouterSet(address router);
-    event KeeperSet(address keeper);
-    event SplitSet(uint16 reward, uint16 boost, uint16 liq, uint16 burn, uint16 mkt, uint16 team);
     event RouterApproved(address router);
+    event KeeperSet(address keeper);
+    event PathModeSet(bool directUsdc);
 
     event Processed(
         uint256 mmmIn,
@@ -64,6 +110,10 @@ contract TaxVault is Ownable {
         uint256 usdcToMkt,
         uint256 usdcToTeam
     );
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(
         address mmmToken,
@@ -83,6 +133,10 @@ contract TaxVault is Ownable {
         wmon = IERC20(wmonToken);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              ADMIN
+    //////////////////////////////////////////////////////////////*/
+
     function setRouter(address router_) external onlyOwner {
         if (router_ == address(0)) revert ZeroAddress();
         router = router_;
@@ -98,6 +152,11 @@ contract TaxVault is Ownable {
     function setKeeper(address k) external onlyOwner {
         keeper = k;
         emit KeeperSet(k);
+    }
+
+    function setUseDirectUsdcPath(bool v) external onlyOwner {
+        useDirectUsdcPath = v;
+        emit PathModeSet(v);
     }
 
     function wireOnce(
@@ -121,18 +180,35 @@ contract TaxVault is Ownable {
         marketingVault   = marketingVault_;
         teamVestingVault = teamVestingVault_;
 
-        emit Wired(rewardVault_, boostVault_, swapVault_, marketingVault_, teamVestingVault_);
+        emit Wired(
+            rewardVault_,
+            boostVault_,
+            swapVault_,
+            marketingVault_,
+            teamVestingVault_
+        );
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
     modifier onlyOwnerOrKeeper() {
-        if (msg.sender != owner() && msg.sender != keeper) revert OnlyOwnerOrKeeper();
+        if (msg.sender != owner() && msg.sender != keeper) {
+            revert OnlyOwnerOrKeeper();
+        }
         _;
     }
 
-    function process(uint256 mmmAmount, uint256 minUsdcOut, uint256 deadline)
-        external
-        onlyOwnerOrKeeper
-    {
+    /*//////////////////////////////////////////////////////////////
+                              PROCESS
+    //////////////////////////////////////////////////////////////*/
+
+    function process(
+        uint256 mmmAmount,
+        uint256 minUsdcOut,
+        uint256 deadline
+    ) external onlyOwnerOrKeeper {
         if (mmmAmount == 0) revert AmountZero();
         if (
             rewardVault == address(0) ||
@@ -142,8 +218,8 @@ contract TaxVault is Ownable {
             teamVestingVault == address(0)
         ) revert NotWired();
 
-        uint256 toReward = (mmmAmount * bpsReward) / BPS;
-        uint256 toBurn   = (mmmAmount * bpsBurn) / BPS;
+        uint256 toReward  = (mmmAmount * bpsReward) / BPS;
+        uint256 toBurn    = (mmmAmount * bpsBurn) / BPS;
         uint256 toUsdcMmm = mmmAmount - toReward - toBurn;
 
         mmm.safeTransfer(rewardVault, toReward);
@@ -154,11 +230,19 @@ contract TaxVault is Ownable {
         if (toUsdcMmm > 0) {
             if (router == address(0)) revert RouterMissing();
 
-            // MMM -> WMON -> USDC
-            address[] memory path = new address[](3);
-            path[0] = address(mmm);
-            path[1] = address(wmon);
-            path[2] = address(usdc);
+            address[] memory path;
+
+            if (useDirectUsdcPath) {
+                // ✅ THIS IS THE EXACT SAFE VERSION THAT FIXED YOUR ERRORS
+                path = new address;
+                path[0] = address(mmm);
+                path[1] = address(usdc);
+            } else {
+                path = new address;
+                path[0] = address(mmm);
+                path[1] = address(wmon);
+                path[2] = address(usdc);
+            }
 
             uint256 beforeBal = usdc.balanceOf(address(this));
 
@@ -183,6 +267,15 @@ contract TaxVault is Ownable {
         if (toMkt > 0) usdc.safeTransfer(marketingVault, toMkt);
         if (toTeam > 0) usdc.safeTransfer(teamVestingVault, toTeam);
 
-        emit Processed(mmmAmount, toReward, toBurn, toUsdcMmm, usdcOut, toBoost, toMkt, toTeam);
+        emit Processed(
+            mmmAmount,
+            toReward,
+            toBurn,
+            toUsdcMmm,
+            usdcOut,
+            toBoost,
+            toMkt,
+            toTeam
+        );
     }
 }

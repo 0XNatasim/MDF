@@ -4,6 +4,11 @@ const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
+// ------------------------------------------------------------
+// RPC throttle helper (Monad testnet protection)
+// ------------------------------------------------------------
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   const net = await ethers.provider.getNetwork();
@@ -25,9 +30,12 @@ async function main() {
     deployer.address
   );
   await wmon.waitForDeployment();
-  const WMON = await wmon.getAddress();
+  await sleep(1500);
 
+  const WMON = await wmon.getAddress();
   await wmon.mint(deployer.address, ethers.parseUnits("1000000", 18));
+  await sleep(1500);
+
   console.log("WMON deployed:", WMON);
 
   /* -----------------------------------------------------------
@@ -40,22 +48,16 @@ async function main() {
     deployer.address
   );
   await usdc.waitForDeployment();
-  const USDC = await usdc.getAddress();
+  await sleep(1500);
 
+  const USDC = await usdc.getAddress();
   await usdc.mint(deployer.address, ethers.parseUnits("1000000", 6));
+  await sleep(1500);
+
   console.log("USDC deployed:", USDC);
 
   /* -----------------------------------------------------------
-     3. Mock Router
-  ------------------------------------------------------------ */
-  const MockRouter = await ethers.getContractFactory("MockRouter");
-  const router = await MockRouter.deploy();
-  await router.waitForDeployment();
-  const ROUTER = await router.getAddress();
-  console.log("MockRouter deployed:", ROUTER);
-
-  /* -----------------------------------------------------------
-     4. MMMToken
+     3. MMMToken
   ------------------------------------------------------------ */
   const MMM_SUPPLY = ethers.parseUnits("1000000000", 18);
 
@@ -67,12 +69,25 @@ async function main() {
     deployer.address
   );
   await mmm.waitForDeployment();
+  await sleep(1500);
+
   const MMM = await mmm.getAddress();
   console.log("MMMToken deployed:", MMM);
 
+
+  /* -----------------------------------------------------------
+     4. Mock Router
+  ------------------------------------------------------------ */
+  const MockRouter = await ethers.getContractFactory("MockRouter");
+  const router = await MockRouter.deploy(MMM, WMON, USDC);
+  await router.waitForDeployment();
+  await sleep(1500);
+
+  const ROUTER = await router.getAddress();
+  console.log("MockRouter deployed:", ROUTER);
+
   /* -----------------------------------------------------------
      5. TaxVault
-     constructor(address mmm, address usdc, address wmon, address owner)
   ------------------------------------------------------------ */
   const TaxVault = await ethers.getContractFactory("TaxVault");
   const taxVault = await TaxVault.deploy(
@@ -82,6 +97,8 @@ async function main() {
     deployer.address
   );
   await taxVault.waitForDeployment();
+  await sleep(1500);
+
   const TAX_VAULT = await taxVault.getAddress();
   console.log("TaxVault deployed:", TAX_VAULT);
 
@@ -97,6 +114,8 @@ async function main() {
     deployer.address
   );
   await rewardVault.waitForDeployment();
+  await sleep(1500);
+
   const REWARD_VAULT = await rewardVault.getAddress();
   console.log("RewardVault deployed:", REWARD_VAULT);
 
@@ -109,6 +128,8 @@ async function main() {
     deployer.address
   );
   await boostVault.waitForDeployment();
+  await sleep(1500);
+
   const BOOST_VAULT = await boostVault.getAddress();
   console.log("BoostVault deployed:", BOOST_VAULT);
 
@@ -122,6 +143,8 @@ async function main() {
     deployer.address
   );
   await swapVault.waitForDeployment();
+  await sleep(1500);
+
   const SWAP_VAULT = await swapVault.getAddress();
   console.log("SwapVault deployed:", SWAP_VAULT);
 
@@ -142,6 +165,8 @@ async function main() {
     ]
   );
   await marketingVault.waitForDeployment();
+  await sleep(1500);
+
   const MARKETING_VAULT = await marketingVault.getAddress();
   console.log("MarketingVault deployed:", MARKETING_VAULT);
 
@@ -157,7 +182,6 @@ async function main() {
   ------------------------------------------------------------ */
   console.log("\n=== WIRING CONTRACTS ===");
 
-  // TaxVault — ONE atomic wiring
   await taxVault.wireOnce(
     REWARD_VAULT,
     BOOST_VAULT,
@@ -165,19 +189,25 @@ async function main() {
     MARKETING_VAULT,
     TEAM_VAULT
   );
+  await sleep(1500);
   console.log("✓ TaxVault.wireOnce");
 
   await taxVault.setRouter(ROUTER);
+  await sleep(1500);
   console.log("✓ TaxVault.setRouter");
 
   await swapVault.setRouter(ROUTER);
+  await sleep(1500);
   await swapVault.setTaxVault(TAX_VAULT);
+  await sleep(1500);
   console.log("✓ SwapVault wired");
 
   await boostVault.setRewardVaultOnce(REWARD_VAULT);
+  await sleep(1500);
   console.log("✓ BoostVault.setRewardVaultOnce");
 
   await mmm.setTaxVaultOnce(TAX_VAULT);
+  await sleep(1500);
   console.log("✓ MMMToken.setTaxVaultOnce");
 
   console.log("\n=== WIRING COMPLETE ===");
