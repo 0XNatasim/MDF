@@ -211,9 +211,11 @@ function mkWallet(name, addr) {
     address: ethers.getAddress(addr),
     mmmHoldings: 0,
     claimableMon: 0,
+
+    // ⏱️ eligibility tracking
+    holdStartTs: null, // unix timestamp (seconds)
   };
 }
-
 /* =========================
    Slider
 ========================= */
@@ -1256,6 +1258,20 @@ async function refreshAll() {
 
       w.mmmHoldings = Number(ethers.formatUnits(bal, connectedSnapshot.decimals));
       w.claimableMon = Number(ethers.formatEther(claimMon));
+
+      // ⏱️ START HOLD TIMER when balance first meets minBalance
+      const minBal = Number(
+        ethers.formatUnits(await rewardVaultRead.minBalance(), connectedSnapshot.decimals)
+      );
+
+      if (mmm >= minBal && !w.holdStartTs) {
+        w.holdStartTs = Math.floor(Date.now() / 1000);
+      }
+
+      // reset if balance drops below minBalance
+      if (mmm < minBal) {
+        w.holdStartTs = null;
+      }
     }
 
     // connected wallet snapshot
