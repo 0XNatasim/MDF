@@ -13,22 +13,16 @@ const CONFIG = {
   chainIdHex: "0x279F",
   chainName: "Monad Testnet",
   nativeSymbol: "MON",
-  rpcUrls: ["https://rpc.ankr.com/monad_testnet", "https://testnet-rpc.monad.xyz"],
+  rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
-
-  // Contracts
-  mmmToken: "0x1Ad3565c099F5242012Fb1f21aaA729EFcf75c16",
-  tracker: "0x5B870DAa512DB9DADEbD53d55045BAE798B4B86B",
-  pool: "0x7d4A5Ed4C366aFa71c5b4158b2F203B1112AC7FD",
-
-  wmon: "0x51C0bb68b65bd84De6518C939CB9Dbe2d6Fa7079",
-  factory: "0x8e8a713Be23d9be017d7A5f4D649982B5dD24615",
-  router: "0xC3B66EE616286c5e4A0aE6D33238e86104Ec8051",
-
-  // Default watch list
+  // === CONTRACTS (MONAD TESTNET) ===
+  mmmToken: "0x698828907aEBCC72f104200C2F61Ecd9a4fC4E29",
+  rewardVault: "0x69a2c17f891645b71Edebdfa6c056Ae492A17C54",
+  taxVault: "0x19d1CC532f27244b59f848437724be9eBFb641d8",
+  boostVault: "0xE2F6cc618c29006CE4a0a5BeAd62dD0EAD752664",
+  router: "0xAD82f0b75dB323d0f553C879A628474EA5dCb7bb",
+  wmon: "0x4D982b91355fDEfd421E37C15718d585a649E5ac",
   defaultWatch: ["0x22BC7a72000faE48a67520c056C0944d9a675412"],
-
-  // Local storage keys
   LS_WALLETS: "mmm_watch_wallets",
   LS_ACTIONS: "mmm_action_log",
 };
@@ -68,7 +62,7 @@ const PAIR_ABI = [
   "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32)",
 ];
 
-const TRACKER_ABI = [
+const VAULT_ABI = [
   "function claimable(address) view returns (uint256)",
   "function pendingReward(address) view returns (uint256)",
   "function withdrawableDividendOf(address) view returns (uint256)",
@@ -89,11 +83,12 @@ let browserProvider = null;
 let signer = null;
 let connectedAddress = null;
 
-let tokenRead, trackerRead, routerRead, factoryRead;
-let tokenWrite = null, trackerWrite = null, routerWrite = null;
+let tokenRead, rewardVaultRead, routerRead, factoryRead;
+let tokenWrite = null, rewardVaultWrite = null, routerWrite = null;
 
 let EFFECTIVE_WMON = null;
 let pairRead = null;
+let pairAddress = null;
 
 let wallets = [];
 let actions = [];
@@ -107,7 +102,7 @@ let connectedSnapshot = {
 
 let protocolSnapshot = {
   taxesMMM: 0,
-  trackerMon: 0,
+  rewardVaultMon: 0,
   mmmPerMon: null,
   lastRefresh: null,
 };
@@ -261,528 +256,231 @@ function initWatchedSlider() {
 ========================= */
 async function initReadSide() {
   readProvider = new ethers.FallbackProvider(
-    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url))
+    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url)),
+    null,
+    { quorum: 1 }
   );
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
-  trackerRead = new ethers.Contract(CONFIG.tracker, TRACKER_ABI, readProvider);
+  rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, VAULT_ABI, readProvider);
   routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
-  factoryRead = new ethers.Contract(CONFIG.factory, FACTORY_ABI, readProvider);
 
-  // Resolve WMON/WETH used by router
   try {
-    const routerWeth = await routerRead.WETH();
-    EFFECTIVE_WMON = ethers.getAddress(routerWeth);
+    const factAddr = await routerRead.factory();
+    factoryRead = new ethers.Contract(factAddr, FACTORY_ABI, readProvider);
+    logInfo("Factory at:", factAddr);
   } catch (e) {
-    logInfo("Router.WETH() failed; using CONFIG.wmon", e?.message || e);
-    EFFECTIVE_WMON = ethers.getAddress(CONFIG.wmon);
+    console.warn("Could not read factory from router:", e);
   }
-  window.EFFECTIVE_WMON = EFFECTIVE_WMON;
-  logInfo("Effective WMON:", EFFECTIVE_WMON);
-}
-
-/* =========================
-   Pair / Reserves / Pricing
-========================= */
-async function ensurePair() {
-  if (pairRead) return pairRead;
-
-  const pairAddr = await factoryRead.getPair(EFFECTIVE_WMON, CONFIG.mmmToken);
-  if (!pairAddr || pairAddr === ethers.ZeroAddress) return null;
-
-  pairRead = new ethers.Contract(pairAddr, PAIR_ABI, readProvider);
-  return pairRead;
-}
-
-async function getPairReserves() {
-  const pair = await ensurePair();
-  if (!pair) return null;
-
-  const [t0, t1, reserves] = await Promise.all([pair.token0(), pair.token1(), pair.getReserves()]);
-  const token0 = ethers.getAddress(t0);
-  const token1 = ethers.getAddress(t1);
-
-  // reserves: (reserve0, reserve1, ts)
-  const r0 = reserves[0];
-  const r1 = reserves[1];
-
-  return { token0, token1, r0, r1 };
-}
-
-function uniswapV2AmountOut(amountIn, reserveIn, reserveOut) {
-  if (amountIn <= 0n) return 0n;
-  if (reserveIn <= 0n || reserveOut <= 0n) return 0n;
-  const amountInWithFee = amountIn * 997n;
-  const numerator = amountInWithFee * reserveOut;
-  const denominator = (reserveIn * 1000n) + amountInWithFee;
-  return numerator / denominator;
-}
-
-async function quoteOutFromReserves(amountIn, tokenIn, tokenOut) {
-  const pr = await getPairReserves();
-  if (!pr) throw new Error("Pair not found (no liquidity).");
-
-  const A = ethers.getAddress(tokenIn);
-  const B = ethers.getAddress(tokenOut);
-
-  let reserveIn, reserveOut;
-  if (A === pr.token0 && B === pr.token1) {
-    reserveIn = pr.r0;
-    reserveOut = pr.r1;
-  } else if (A === pr.token1 && B === pr.token0) {
-    reserveIn = pr.r1;
-    reserveOut = pr.r0;
-  } else {
-    throw new Error("Tokens not in pair.");
-  }
-
-  const out = uniswapV2AmountOut(amountIn, reserveIn, reserveOut);
-  if (out === 0n) throw new Error("Empty reserves / output is zero.");
-  return out;
-}
-
-async function quoteMmmPerMon(mmmDecimals) {
-  try {
-    const oneMon = ethers.parseEther("1");
-    const out = await quoteOutFromReserves(oneMon, EFFECTIVE_WMON, CONFIG.mmmToken);
-    return Number(ethers.formatUnits(out, mmmDecimals));
-  } catch (_) {
-    return null;
-  }
-}
-
-/* =========================
-   UI binding
-========================= */
-function setHeaderConnectionUI(isConnected) {
-  const dis = $("disconnectBtn");
-  if (dis) dis.disabled = !isConnected;
-
-  const label = $("connectLabel");
-  if (label) label.textContent = isConnected && connectedAddress ? shortAddr(connectedAddress) : "Connect";
-}
-
-function bindUI() {
-  // topbar
-  $("connectBtn")?.addEventListener("click", () => connectWallet(false));
-  $("disconnectBtn")?.addEventListener("click", () => disconnectWallet());
-  $("refreshBtn")?.addEventListener("click", refreshAll);
-
-  // watched mgmt
-  $("addWatchBtn")?.addEventListener("click", promptAddWatch);
-  $("watchConnectedBtn")?.addEventListener("click", watchConnected);
-
-  // log mgmt
-  $("resetBtn")?.addEventListener("click", resetAll);
-  $("clearLogBtn")?.addEventListener("click", clearLog);
-
-  // send MMM
-  $("sendBtn")?.addEventListener("click", sendTokens);
-  $("walletSelect")?.addEventListener("change", updateAvailableBalance);
-  $("amountInput")?.addEventListener("input", validateAmount);
-  document.querySelectorAll(".chip").forEach((btn) => {
-    btn.addEventListener("click", () => setAmount(parseFloat(btn.dataset.pct || "0")));
-  });
-
-  // swap (HTML values are: buy/sell)
-  $("swapSide")?.addEventListener("change", updateSwapQuoteAndButtons);
-  $("swapAmountIn")?.addEventListener("input", updateSwapQuoteAndButtons);
-  $("swapSlippage")?.addEventListener("change", updateSwapQuoteAndButtons);
-  $("swapApproveBtn")?.addEventListener("click", approveMMMMax);
-  $("swapExecBtn")?.addEventListener("click", executeSwap);
-}
-
-/* =========================
-   Renderers
-========================= */
-function renderConnectedCard() {
-  const el = $("connectedCard");
-  if (!el) return;
-
-  const addr = connectedAddress ? connectedAddress : null;
-  const explorerLink = addr ? `${CONFIG.explorerBase}/address/${addr}` : "#";
-  const canClaim = Boolean(addr) && Number(connectedSnapshot.claimableMon || 0) > 0;
-
-  el.innerHTML = `
-    <div class="wallet-top">
-      <div class="wallet-id">
-        <div class="wallet-mark"><i class="fas fa-user-shield"></i></div>
-        <div style="min-width:0;">
-          <p class="wallet-name">Connected Wallet</p>
-          <div class="wallet-addr">
-            ${addr ? shortAddr(addr) : "—"}
-            ${addr ? `<a class="link" style="margin-left:10px;" target="_blank" rel="noreferrer" href="${explorerLink}">Explorer</a>` : ""}
-            ${addr ? `
-              <button class="icon-btn" style="margin-left:10px;" type="button" id="copyConnectedInline" title="Copy address">
-                <i class="fas fa-copy"></i>
-              </button>` : ""}
-          </div>
-        </div>
-      </div>
-      <span class="badge ${addr ? "badge--good" : "badge--warn"}">
-        ${addr ? "Connected" : "Not connected"}
-      </span>
-    </div>
-
-    <div class="wallet-metrics">
-      <div class="metric">
-        <span class="k">MMM Balance (connected)</span>
-        <span class="v">${addr ? formatMMM(connectedSnapshot.mmmHoldings) : "—"}</span>
-      </div>
-
-      <div>
-        <div class="metric" style="margin-bottom:8px;">
-          <span class="k">Claimable Rewards (MON)</span>
-          <span class="v">${addr ? formatMon(connectedSnapshot.claimableMon) : "—"}</span>
-        </div>
-        <div class="progress"><div style="width:${canClaim ? 100 : 0}%;"></div></div>
-      </div>
-
-      <div style="display:grid; grid-template-columns: 1fr; gap:10px; margin-top: 6px;">
-        <button class="btn ${canClaim ? "btn--primary" : "btn--ghost"}" ${canClaim ? "" : "disabled"} id="connectedClaimBtn">
-          <i class="fas fa-gift"></i> Claim (MON)
-        </button>
-      </div>
-    </div>
-  `;
-
-  $("connectedClaimBtn")?.addEventListener("click", claimConnected);
-  $("copyConnectedInline")?.addEventListener("click", () => copyText(connectedAddress));
-}
-
-function renderWallets() {
-  const container = $("walletsContainer");
-  if (!container) return;
-  container.innerHTML = "";
-
-  wallets.forEach((w) => {
-    const isConn = connectedAddress && ethers.getAddress(w.address) === ethers.getAddress(connectedAddress);
-
-    const card = document.createElement("div");
-    card.className = "wallet-card watched-card";
-    card.innerHTML = `
-      <div class="wallet-top">
-        <div class="wallet-id">
-          <button class="wallet-mark wallet-mark--btn" type="button" data-copy="${w.address}" title="Copy address">
-            <i class="fas fa-copy"></i>
-          </button>
-          <div style="min-width:0;">
-            <p class="wallet-name">${escapeHtml(w.name)}</p>
-            <div class="wallet-addr">
-              ${shortAddr(w.address)}
-              <a class="link" style="margin-left:10px;" target="_blank" rel="noreferrer" href="${CONFIG.explorerBase}/address/${w.address}">Explorer</a>
-            </div>
-          </div>
-        </div>
-        <span class="badge ${isConn ? "badge--good" : "badge--warn"}">
-          ${isConn ? "Connected" : "Watched"}
-        </span>
-      </div>
-
-      <div class="wallet-metrics">
-        <div class="metric">
-          <span class="k">MMM Balance</span>
-          <span class="v">${formatMMM(w.mmmHoldings)}</span>
-        </div>
-
-        <div class="metric">
-          <span class="k">Claimable Rewards (MON)</span>
-          <span class="v">${formatMon(w.claimableMon)}</span>
-        </div>
-
-        <div style="display:grid; grid-template-columns: 1fr 48px; gap:10px; margin-top: 6px;">
-          <button class="btn btn--ghost" data-remove="${w.address}" title="Remove watch">
-            <i class="fas fa-trash"></i>
-          </button>
-        </div>
-      </div>
-    `;
-    container.appendChild(card);
-  });
-
-  container.querySelectorAll("[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", () => removeWatch(btn.dataset.remove));
-  });
-  container.querySelectorAll("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", () => copyText(btn.dataset.copy));
-  });
-
-  renderSendDropdown();
-}
-
-function renderActions() {
-  const tbody = $("txBody");
-  if (!tbody) return;
-  tbody.innerHTML = "";
-
-  actions.slice(0, 25).forEach((a) => {
-    const tr = document.createElement("tr");
-
-    const linkCell = a.txHash
-      ? `<a class="link" target="_blank" rel="noreferrer" href="${CONFIG.explorerBase}/tx/${a.txHash}">
-           <span class="mono">${shortAddr(a.txHash)}</span>
-         </a>`
-      : (a.address
-          ? `<span class="mono">${shortAddr(a.address)}</span>`
-          : "—");
-
-    const statusBadge =
-      a.status === "Completed"
-        ? `<span class="badge badge--good">Completed</span>`
-        : `<span class="badge badge--warn">${escapeHtml(a.status || "Unknown")}</span>`;
-
-    const monCell = a.amountMon ? escapeHtml(a.amountMon) : "—";
-    const mmmCell = a.amountMmm ? escapeHtml(a.amountMmm) : "—";
-    const quoteCell = a.quote ? escapeHtml(a.quote) : "—";
-
-    // Prefer dateTime, fallback to date
-    const dt = a.dateTime || a.date || "—";
-
-    tr.innerHTML = `
-      <td>${escapeHtml(a.type || "—")}</td>
-      <td>${monCell}</td>
-      <td>${mmmCell}</td>
-      <td>${quoteCell}</td>
-      <td>${linkCell}</td>
-      <td>${statusBadge}</td>
-      <td>${escapeHtml(dt)}</td>
-    `;
-
-    tbody.appendChild(tr);
-  });
-}
-
-
-function updateKPIs() {
-  setText("kpiTaxes", formatMMM(protocolSnapshot.taxesMMM));
-  setText("kpiTrackerMon", formatMon(protocolSnapshot.trackerMon));
-
-  let priceText = "—";
-  if (protocolSnapshot.mmmPerMon != null) {
-    const mmmPerMon = protocolSnapshot.mmmPerMon;
-    const monPerMmm = mmmPerMon > 0 ? (1 / mmmPerMon) : 0;
-    priceText = `1 MON ≈ ${fmt(mmmPerMon, 6)} MMM | 1 MMM ≈ ${fmt(monPerMmm, 10)} MON`;
-  }
-  setText("kpiPrice", priceText);
-  setText("kpiRefresh", protocolSnapshot.lastRefresh ? protocolSnapshot.lastRefresh.toLocaleTimeString() : "—");
-}
-
-/* =========================
-   Pool UI (reserves + meta)
-========================= */
-async function updatePoolReservesUI() {
-  const no = () => {
-    setText("poolMmmReserves", "No liquidity");
-    setText("poolWmonReserves", "No liquidity");
-    setText("poolMmmValue", "—");
-    setText("poolWmonValue", "—");
-    setText("poolMmmPct", "—");
-    setText("poolWmonPct", "—");
-  };
 
   try {
-    const pr = await getPairReserves();
-    if (!pr) return no();
-
-    const mmmDecimals = connectedSnapshot.decimals || 18;
-
-    // identify which reserve is MMM vs WMON
-    let mmmReserveRaw, wmonReserveRaw;
-    if (pr.token0.toLowerCase() === CONFIG.mmmToken.toLowerCase()) {
-      mmmReserveRaw = pr.r0;
-      wmonReserveRaw = pr.r1;
-    } else {
-      mmmReserveRaw = pr.r1;
-      wmonReserveRaw = pr.r0;
-    }
-
-    const mmm = Number(ethers.formatUnits(mmmReserveRaw, mmmDecimals));
-    const wmon = Number(ethers.formatEther(wmonReserveRaw));
-
-    setText("poolMmmReserves", `${fmt(mmm)} MMM`);
-    setText("poolWmonReserves", `${fmt(wmon)} WMON`);
-
-    // lightweight meta: show as “value” same as reserves for now (no USD oracle),
-    // and percentage split by notional MON using current implied price if available.
-    setText("poolMmmValue", `≈ ${fmt(mmm)} MMM`);
-    setText("poolWmonValue", `≈ ${fmt(wmon)} MON`);
-
-    const mmmPerMon = protocolSnapshot.mmmPerMon;
-    if (mmmPerMon && mmmPerMon > 0) {
-      const mmmAsMon = mmm / mmmPerMon; // MMM -> MON (approx)
-      const totalMonNotional = mmmAsMon + wmon;
-      const mmmPct = totalMonNotional > 0 ? (mmmAsMon / totalMonNotional) * 100 : 0;
-      const wmonPct = totalMonNotional > 0 ? (wmon / totalMonNotional) * 100 : 0;
-      setText("poolMmmPct", `${fmt(mmmPct, 2)}%`);
-      setText("poolWmonPct", `${fmt(wmonPct, 2)}%`);
-    } else {
-      setText("poolMmmPct", "—");
-      setText("poolWmonPct", "—");
-    }
+    EFFECTIVE_WMON = await routerRead.WETH();
+    logInfo("WETH (WMON) from router:", EFFECTIVE_WMON);
   } catch (e) {
-    console.warn("updatePoolReservesUI failed:", e);
-    setText("poolMmmReserves", "Error");
-    setText("poolWmonReserves", "Error");
-    setText("poolMmmValue", "—");
-    setText("poolWmonValue", "—");
-    setText("poolMmmPct", "—");
-    setText("poolWmonPct", "—");
+    EFFECTIVE_WMON = CONFIG.wmon;
+    logInfo("Using fallback WMON:", EFFECTIVE_WMON);
   }
-}
 
-/* =========================
-   Connect / Disconnect
-========================= */
-async function connectWallet(silent) {
-  try {
-    if (!window.ethereum) return uiError("No injected wallet found (MetaMask/Backpack).");
-
-    showLoading("Connecting wallet…");
-
-    browserProvider = new ethers.BrowserProvider(window.ethereum);
-
-    // Ensure chain
-    const net = await browserProvider.getNetwork();
-    if (Number(net.chainId) !== CONFIG.chainIdDec) {
-      try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: CONFIG.chainIdHex }],
-        });
-      } catch (e) {
-        if (e?.code === 4902) {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId: CONFIG.chainIdHex,
-              chainName: CONFIG.chainName,
-              nativeCurrency: { name: CONFIG.nativeSymbol, symbol: CONFIG.nativeSymbol, decimals: 18 },
-              rpcUrls: CONFIG.rpcUrls,
-              blockExplorerUrls: [CONFIG.explorerBase],
-            }],
-          });
-        } else {
-          throw e;
-        }
+  // Derive pair address
+  if (factoryRead) {
+    try {
+      pairAddress = await factoryRead.getPair(CONFIG.mmmToken, EFFECTIVE_WMON);
+      if (pairAddress && pairAddress !== ethers.ZeroAddress) {
+        pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
+        logInfo("Pair address:", pairAddress);
       }
+    } catch (e) {
+      console.warn("Could not derive pair address:", e);
+    }
+  }
+
+  logInfo("Read-side initialization complete");
+}
+
+/* =========================
+   Connect wallet
+========================= */
+async function connectWallet(silent = false) {
+  try {
+    if (!window.ethereum) {
+      if (!silent) uiError("No wallet detected. Install MetaMask or similar.");
+      return;
     }
 
-    if (!silent) await browserProvider.send("eth_requestAccounts", []);
+    browserProvider = new ethers.BrowserProvider(window.ethereum, "any");
+    const network = await browserProvider.getNetwork();
+
+    if (Number(network.chainId) !== CONFIG.chainIdDec) {
+      await switchOrAddChain();
+    }
+
+    const accounts = await browserProvider.send("eth_requestAccounts", []);
+    if (!accounts?.length) {
+      if (!silent) uiError("No accounts found");
+      return;
+    }
+
+    connectedAddress = ethers.getAddress(accounts[0]);
     signer = await browserProvider.getSigner();
-    connectedAddress = await signer.getAddress();
 
     tokenWrite = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
-    trackerWrite = new ethers.Contract(CONFIG.tracker, TRACKER_ABI, signer);
+    rewardVaultWrite = new ethers.Contract(CONFIG.rewardVault, VAULT_ABI, signer);
     routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
 
     setHeaderConnectionUI(true);
-    renderSendDropdown();
-
-    // listeners
-    window.ethereum.on?.("accountsChanged", async (accounts) => {
-      if (!accounts?.length) return disconnectWallet();
-      connectedAddress = ethers.getAddress(accounts[0]);
-      signer = await browserProvider.getSigner();
-      tokenWrite = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
-      trackerWrite = new ethers.Contract(CONFIG.tracker, TRACKER_ABI, signer);
-      routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
-      setHeaderConnectionUI(true);
-      renderSendDropdown();
-      await refreshAll();
-    });
-
-    window.ethereum.on?.("chainChanged", () => location.reload());
-
-    hideLoading();
     await refreshAll();
+    logInfo("Wallet connected:", connectedAddress);
   } catch (e) {
-    hideLoading();
-    uiError(`Connect failed: ${e?.message || e}`, e);
+    console.error("Connect wallet error:", e);
+    if (!silent) uiError(`Connection error: ${e?.message || e}`, e);
+  }
+}
+
+async function switchOrAddChain() {
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CONFIG.chainIdHex }],
+    });
+  } catch (switchError) {
+    if (switchError.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: CONFIG.chainIdHex,
+              chainName: CONFIG.chainName,
+              nativeCurrency: {
+                name: CONFIG.nativeSymbol,
+                symbol: CONFIG.nativeSymbol,
+                decimals: 18,
+              },
+              rpcUrls: CONFIG.rpcUrls,
+              blockExplorerUrls: [CONFIG.explorerBase],
+            },
+          ],
+        });
+      } catch (addError) {
+        throw addError;
+      }
+    } else {
+      throw switchError;
+    }
+  }
+}
+
+function setHeaderConnectionUI(connected) {
+  const btn = $("connectBtn");
+  const lbl = $("connectLabel");
+  const disc = $("disconnectBtn");
+
+  if (connected && connectedAddress) {
+    if (lbl) lbl.textContent = shortAddr(connectedAddress);
+    if (btn) btn.classList.replace("btn--secondary", "btn--primary");
+    if (disc) disc.disabled = false;
+  } else {
+    if (lbl) lbl.textContent = "Connect";
+    if (btn) btn.classList.replace("btn--primary", "btn--secondary");
+    if (disc) disc.disabled = true;
   }
 }
 
 function disconnectWallet() {
-  connectedAddress = null;
+  browserProvider = null;
   signer = null;
+  connectedAddress = null;
   tokenWrite = null;
-  trackerWrite = null;
+  rewardVaultWrite = null;
   routerWrite = null;
 
-  connectedSnapshot = { address: null, mmmHoldings: 0, claimableMon: 0, decimals: connectedSnapshot.decimals || 18 };
+  connectedSnapshot.address = null;
+  connectedSnapshot.mmmHoldings = 0;
+  connectedSnapshot.claimableMon = 0;
 
   setHeaderConnectionUI(false);
-  renderSendDropdown();
   renderConnectedCard();
-  updateAvailableBalance();
+  renderSendDropdown();
   updateSwapQuoteAndButtons();
-  updateKPIs();
+  logInfo("Wallet disconnected");
 }
 
 /* =========================
-   Claim
+   Claim logic
 ========================= */
-async function claimConnected() {
-  if (!connectedAddress) return uiError("Connect wallet first.");
-  return claimTokens(connectedAddress);
-}
-
 async function getClaimableMon(addr) {
-  const candidates = [
-    { fn: "earned", args: [addr] },
-    { fn: "claimable", args: [addr] },
-    { fn: "pendingReward", args: [addr] },
-    { fn: "withdrawableDividendOf", args: [addr] },
-    { fn: "withdrawableRewardsOf", args: [addr] },
+  if (!rewardVaultRead) return 0n;
+
+  // Try multiple methods
+  const methods = [
+    "claimable",
+    "withdrawableDividendOf",
+    "withdrawableRewardsOf",
+    "pendingReward",
+    "earned",
   ];
 
-  for (const c of candidates) {
+  for (const m of methods) {
     try {
-      trackerRead.getFunction(c.fn);
-      const v = await trackerRead[c.fn](...c.args);
-      if (typeof v === "bigint") return v;
+      const val = await rewardVaultRead[m](addr);
+      if (val && val > 0n) return val;
     } catch (_) {}
   }
+
   return 0n;
 }
 
-async function claimTokens(addr) {
+async function claimRewards(walletAddr) {
   try {
-    if (!connectedAddress) return uiError("Connect wallet first.");
-    if (ethers.getAddress(addr) !== ethers.getAddress(connectedAddress)) {
-      return uiError("Claim only works for the connected signer address.");
+    if (!rewardVaultWrite || !signer) {
+      return uiError("Wallet not connected or reward vault not available.");
     }
-    if (!trackerWrite) return uiError("Tracker signer not ready. Reconnect wallet.");
 
-    showLoading("Claiming rewards (MON)…");
+    showLoading("Checking claimable rewards…");
 
+    const claimable = await getClaimableMon(walletAddr);
+    if (claimable <= 0n) {
+      hideLoading();
+      return uiError("No claimable rewards for this wallet.");
+    }
+
+    const claimableHuman = Number(ethers.formatEther(claimable));
+
+    // Try multiple claim methods
     const claimMethods = [
-      { fn: "claim", args: [] },
-      { fn: "claimDividend", args: [] },
-      { fn: "claim", args: [connectedAddress] },
-      { fn: "claimForAccount", args: [connectedAddress] },
-      { fn: "processAccount", args: [connectedAddress, true] },
+      { name: "claim", args: [walletAddr] },
+      { name: "claim", args: [] },
+      { name: "claimDividend", args: [] },
+      { name: "claimForAccount", args: [walletAddr] },
     ];
 
-    let tx = null;
-    for (const m of claimMethods) {
+    let tx;
+    let usedMethod = "";
+
+    for (const { name, args } of claimMethods) {
       try {
-        trackerWrite.getFunction(m.fn);
-        tx = await trackerWrite[m.fn](...m.args);
+        showLoading(`Attempting claim via ${name}…`);
+        tx = await rewardVaultWrite[name](...args, { gasLimit: 300000n });
+        usedMethod = name;
         break;
-      } catch (_) {}
-    }
-    if (!tx) {
-      hideLoading();
-      return uiError("No compatible claim function found on tracker.");
+      } catch (e) {
+        logInfo(`Method ${name} failed:`, e.message);
+      }
     }
 
+    if (!tx) {
+      hideLoading();
+      return uiError("All claim methods failed. The vault may not support claiming.");
+    }
+
+    showLoading(`Claim transaction sent via ${usedMethod}. Waiting for confirmation…`);
     const rcpt = await tx.wait();
 
     actions.unshift({
       type: "CLAIM",
-      amountMon: "",          // you can fill actual claimed amount later if you read logs
-      amountMmm: "",
-      quote: "Rewards claim",
+      amountMon: `${claimableHuman.toFixed(6)} MON`,
+      amountMmm: "—",
+      quote: "—",
       txHash: rcpt.hash,
       status: "Completed",
       dateTime: nowDateTime(),
@@ -798,61 +496,387 @@ async function claimTokens(addr) {
 }
 
 /* =========================
-   Watched wallets
+   Pool reserves
 ========================= */
-function promptAddWatch() {
-  const addr = prompt("Enter address to watch (0x...)");
-  if (!addr) return;
-  addWatch(addr);
-}
-
-function addWatch(addr) {
-  try {
-    const a = ethers.getAddress(addr);
-    if (wallets.some((w) => ethers.getAddress(w.address) === a)) return;
-    wallets.push(mkWallet(`Watched #${wallets.length + 1}`, a));
-    saveData();
-    renderWallets();
-    refreshAll();
-  } catch (_) {
-    uiError("Invalid address.");
+async function updatePoolReservesUI() {
+  if (!pairRead) {
+    setText("poolMmmReserves", "—");
+    setText("poolWmonReserves", "—");
+    setText("poolMmmValue", "—");
+    setText("poolWmonValue", "—");
+    setText("poolMmmPct", "—");
+    setText("poolWmonPct", "—");
+    return;
   }
-}
 
-function watchConnected() {
-  if (!connectedAddress) return uiError("Connect wallet first.");
-  addWatch(connectedAddress);
-}
-
-function removeWatch(addr) {
   try {
-    const a = ethers.getAddress(addr);
-    wallets = wallets.filter((w) => ethers.getAddress(w.address) !== a);
-    saveData();
-    renderWallets();
-  } catch (_) {
-    uiError("Could not remove (invalid address).");
+    const [token0Addr, token1Addr, reserves] = await Promise.all([
+      pairRead.token0(),
+      pairRead.token1(),
+      pairRead.getReserves(),
+    ]);
+
+    const [r0, r1] = reserves;
+    const token0Lower = token0Addr.toLowerCase();
+    const mmmLower = CONFIG.mmmToken.toLowerCase();
+
+    let mmmReserve, wmonReserve;
+    if (token0Lower === mmmLower) {
+      mmmReserve = r0;
+      wmonReserve = r1;
+    } else {
+      mmmReserve = r1;
+      wmonReserve = r0;
+    }
+
+    const decimals = connectedSnapshot.decimals || 18;
+    const mmmHuman = Number(ethers.formatUnits(mmmReserve, decimals));
+    const wmonHuman = Number(ethers.formatEther(wmonReserve));
+
+    const totalValueInMon = wmonHuman * 2;
+
+    const mmmPct = ((mmmHuman / (mmmHuman + wmonHuman)) * 100).toFixed(2);
+    const wmonPct = ((wmonHuman / (mmmHuman + wmonHuman)) * 100).toFixed(2);
+
+    setText("poolMmmReserves", fmtCompact(mmmHuman, 2));
+    setText("poolWmonReserves", fmtCompact(wmonHuman, 2));
+    setText("poolMmmValue", `~${fmtCompact(wmonHuman, 2)} MON`);
+    setText("poolWmonValue", `~${fmtCompact(wmonHuman, 2)} MON`);
+    setText("poolMmmPct", `${mmmPct}%`);
+    setText("poolWmonPct", `${wmonPct}%`);
+  } catch (e) {
+    console.warn("Could not fetch pool reserves:", e);
+    setText("poolMmmReserves", "—");
+    setText("poolWmonReserves", "—");
+    setText("poolMmmValue", "—");
+    setText("poolWmonValue", "—");
+    setText("poolMmmPct", "—");
+    setText("poolWmonPct", "—");
   }
 }
 
 /* =========================
-   Actions log mgmt
+   Quote price
 ========================= */
-function resetAll() {
-  if (!confirm("Reset watched addresses and local action log?")) return;
-  wallets = [];
-  actions = [];
+async function quoteMmmPerMon(decimals = 18) {
+  if (!pairRead) return null;
+
+  try {
+    const [token0Addr, token1Addr, reserves] = await Promise.all([
+      pairRead.token0(),
+      pairRead.token1(),
+      pairRead.getReserves(),
+    ]);
+
+    const [r0, r1] = reserves;
+    const token0Lower = token0Addr.toLowerCase();
+    const mmmLower = CONFIG.mmmToken.toLowerCase();
+
+    let mmmReserve, wmonReserve;
+    if (token0Lower === mmmLower) {
+      mmmReserve = r0;
+      wmonReserve = r1;
+    } else {
+      mmmReserve = r1;
+      wmonReserve = r0;
+    }
+
+    if (!mmmReserve || !wmonReserve || wmonReserve === 0n) return null;
+
+    const mmmHuman = Number(ethers.formatUnits(mmmReserve, decimals));
+    const wmonHuman = Number(ethers.formatEther(wmonReserve));
+
+    const mmmPerMon = wmonHuman > 0 ? mmmHuman / wmonHuman : 0;
+    return mmmPerMon;
+  } catch (e) {
+    console.warn("Could not quote MMM/MON:", e);
+    return null;
+  }
+}
+
+async function quoteOutFromReserves(amountIn, tokenIn, tokenOut) {
+  if (!pairRead) throw new Error("Pair not available");
+
+  try {
+    const [token0Addr, token1Addr, reserves] = await Promise.all([
+      pairRead.token0(),
+      pairRead.token1(),
+      pairRead.getReserves(),
+    ]);
+
+    const [r0, r1] = reserves;
+    const token0Lower = token0Addr.toLowerCase();
+    const tokenInLower = tokenIn.toLowerCase();
+
+    let reserveIn, reserveOut;
+    if (token0Lower === tokenInLower) {
+      reserveIn = r0;
+      reserveOut = r1;
+    } else {
+      reserveIn = r1;
+      reserveOut = r0;
+    }
+
+    if (!reserveIn || !reserveOut || reserveIn === 0n || reserveOut === 0n) {
+      throw new Error("Insufficient liquidity");
+    }
+
+    const amountInWithFee = amountIn * 997n;
+    const numerator = amountInWithFee * reserveOut;
+    const denominator = reserveIn * 1000n + amountInWithFee;
+    const amountOut = numerator / denominator;
+
+    return amountOut;
+  } catch (e) {
+    console.warn("quoteOutFromReserves error:", e);
+    throw e;
+  }
+}
+
+/* =========================
+   KPI updates
+========================= */
+function updateKPIs() {
+  setText("kpiTaxes", formatMMM(protocolSnapshot.taxesMMM));
+  setText("kpiTrackerMon", formatMon(protocolSnapshot.rewardVaultMon));
+
+  const price = protocolSnapshot.mmmPerMon;
+  if (price !== null && price > 0) {
+    const monPerMmm = 1 / price;
+    setText("kpiPrice", fmtTiny(monPerMmm, 10));
+  } else {
+    setText("kpiPrice", "—");
+  }
+
+  if (protocolSnapshot.lastRefresh) {
+    const d = protocolSnapshot.lastRefresh;
+    const str = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    setText("kpiRefresh", str);
+  } else {
+    setText("kpiRefresh", "—");
+  }
+}
+
+/* =========================
+   Connected wallet card
+========================= */
+function renderConnectedCard() {
+  const container = $("connectedCard");
+  if (!container) return;
+
+  if (!connectedAddress) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const addr = connectedSnapshot.address || connectedAddress;
+  const mmm = connectedSnapshot.mmmHoldings;
+  const claimMon = connectedSnapshot.claimableMon;
+
+  const canClaim = claimMon > 0;
+
+  const html = `
+    <div class="wallet-card">
+      <div class="wallet-top">
+        <div class="wallet-id">
+          <div class="wallet-mark">W</div>
+          <div>
+            <h3 class="wallet-name">Connected Wallet</h3>
+            <div class="wallet-addr mono">
+              ${escapeHtml(addr)}
+              <button class="icon-btn" onclick="copyText('${addr}')" title="Copy address">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        ${canClaim ? `
+        <button class="btn btn--primary" onclick="claimRewards('${addr}')">
+          <i class="fas fa-hand-holding-dollar"></i> Claim
+        </button>
+        ` : ""}
+      </div>
+
+      <div class="wallet-metrics">
+        <div class="metric">
+          <span class="k">MMM Holdings:</span>
+          <span class="v mono">${formatMMM(mmm)}</span>
+        </div>
+        <div class="metric">
+          <span class="k">Claimable MON:</span>
+          <span class="v mono">${formatMon(claimMon)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+/* =========================
+   Watched wallets
+========================= */
+function renderWallets() {
+  const container = $("walletsContainer");
+  if (!container) return;
+
+  if (!wallets.length) {
+    container.innerHTML = `<div style="padding:16px; color:rgba(255,255,255,0.55); text-align:center;">No watched wallets yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = wallets
+    .map((w) => {
+      const canClaim = w.claimableMon > 0;
+
+      return `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <div class="wallet-mark">${escapeHtml(w.name.charAt(0).toUpperCase())}</div>
+              <div style="min-width:0;">
+                <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+                <div class="wallet-addr mono">
+                  ${escapeHtml(w.address)}
+                  <button class="icon-btn" onclick="copyText('${w.address}')" title="Copy address">
+                    <i class="fas fa-copy"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+
+          <div class="wallet-metrics">
+            <div class="metric">
+              <span class="k">MMM Holdings:</span>
+              <span class="v mono">${formatMMM(w.mmmHoldings)}</span>
+            </div>
+            <div class="metric">
+              <span class="k">Claimable MON:</span>
+              <span class="v mono">${formatMon(w.claimableMon)}</span>
+            </div>
+          </div>
+
+          ${canClaim ? `
+          <button class="btn btn--secondary btn--block" onclick="claimRewards('${w.address}')">
+            <i class="fas fa-hand-holding-dollar"></i> Claim Rewards
+          </button>
+          ` : ""}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function addWallet() {
+  const addr = prompt("Enter wallet address to watch:");
+  if (!addr) return;
+
+  try {
+    const checksummed = ethers.getAddress(addr.trim());
+    const exists = wallets.some((w) => w.address.toLowerCase() === checksummed.toLowerCase());
+
+    if (exists) {
+      return uiError("This wallet is already being watched.");
+    }
+
+    const name = prompt("Name for this wallet:", "Watched");
+    const w = mkWallet(name || "Watched", checksummed);
+    wallets.push(w);
+
+    saveData();
+    refreshAll();
+  } catch (e) {
+    uiError("Invalid address.", e);
+  }
+}
+
+function watchConnected() {
+  if (!connectedAddress) {
+    return uiError("Please connect your wallet first.");
+  }
+
+  const exists = wallets.some((w) => w.address.toLowerCase() === connectedAddress.toLowerCase());
+  if (exists) {
+    return uiError("Connected wallet is already in the watch list.");
+  }
+
+  const name = prompt("Name for this wallet:", "My Wallet");
+  const w = mkWallet(name || "My Wallet", connectedAddress);
+  wallets.push(w);
+
+  saveData();
+  refreshAll();
+}
+
+function removeWallet(id) {
+  if (!confirm("Remove this wallet from watch list?")) return;
+
+  wallets = wallets.filter((w) => w.id !== id);
   saveData();
   renderWallets();
-  renderActions();
-  updateKPIs();
+}
+
+/* =========================
+   Actions table
+========================= */
+function renderActions() {
+  const tbody = $("txBody");
+  if (!tbody) return;
+
+  if (!actions.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:rgba(255,255,255,0.55);">No actions yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = actions
+    .map((a) => {
+      const explorerLink =
+        a.txHash && a.txHash !== "—"
+          ? `<a class="link mono" href="${CONFIG.explorerBase}/tx/${a.txHash}" target="_blank" rel="noreferrer">${shortAddr(a.txHash)}</a>`
+          : escapeHtml(a.txHash || "—");
+
+      return `
+        <tr>
+          <td><span class="badge badge--good">${escapeHtml(a.type)}</span></td>
+          <td class="mono">${escapeHtml(a.amountMon || "—")}</td>
+          <td class="mono">${escapeHtml(a.amountMmm || "—")}</td>
+          <td class="mono">${escapeHtml(a.quote || "—")}</td>
+          <td>${explorerLink}</td>
+          <td><span class="badge badge--good">${escapeHtml(a.status || "Pending")}</span></td>
+          <td class="mono">${escapeHtml(a.dateTime || "—")}</td>
+        </tr>
+      `;
+    })
+    .join("");
 }
 
 function clearLog() {
-  if (!confirm("Clear local action log?")) return;
+  if (!confirm("Clear all logged actions?")) return;
+
   actions = [];
   saveData();
   renderActions();
+}
+
+function resetAll() {
+  if (!confirm("Reset all watched wallets and action log?")) return;
+
+  wallets = [];
+  actions = [];
+
+  if (CONFIG.defaultWatch?.length) {
+    wallets = CONFIG.defaultWatch.map((a, i) => mkWallet(`Watched #${i + 1}`, a));
+  }
+
+  saveData();
+  renderWallets();
+  renderActions();
+  refreshAll();
 }
 
 /* =========================
@@ -863,8 +887,12 @@ function renderSendDropdown() {
   if (!sel) return;
 
   sel.innerHTML = "";
+
   if (!connectedAddress) {
-    sel.innerHTML = `<option value="">Connect wallet first</option>`;
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Connect wallet first";
+    sel.appendChild(opt);
     return;
   }
 
@@ -872,88 +900,87 @@ function renderSendDropdown() {
   opt.value = connectedAddress;
   opt.textContent = `Connected (${shortAddr(connectedAddress)})`;
   sel.appendChild(opt);
+
+  updateAvailableBalance();
 }
 
 async function updateAvailableBalance() {
-  const el = $("availableBalance");
-  if (!el) return;
+  const sel = $("walletSelect");
+  const balSpan = $("availableBalance");
 
-  if (!connectedAddress) {
-    el.textContent = "0 MMM";
+  if (!sel || !balSpan) return;
+
+  const addr = sel.value;
+  if (!addr || !tokenRead) {
+    balSpan.textContent = "0 MMM";
     return;
   }
 
   try {
+    const bal = await tokenRead.balanceOf(addr);
     const decimals = connectedSnapshot.decimals || 18;
-    const raw = await tokenRead.balanceOf(connectedAddress);
-    const v = Number(ethers.formatUnits(raw, decimals));
-    el.textContent = formatMMM(v);
+    const human = Number(ethers.formatUnits(bal, decimals));
+    balSpan.textContent = formatMMM(human);
   } catch (e) {
-    console.warn("updateAvailableBalance failed:", e);
-    el.textContent = "—";
+    balSpan.textContent = "0 MMM";
   }
 }
 
-function validateAmount() {
-  const inp = $("amountInput");
-  if (!inp) return;
-  const v = parseFloat(inp.value || "0");
-  inp.classList.toggle("is-invalid", !(Number.isFinite(v) && v >= 0));
-}
-
-async function setAmount(pct) {
-  if (!connectedAddress) return uiError("Connect wallet first.");
-  if (!(pct > 0)) return;
-
+async function sendMmm() {
   try {
-    const decimals = connectedSnapshot.decimals || 18;
-    const raw = await tokenRead.balanceOf(connectedAddress);
-    const bal = Number(ethers.formatUnits(raw, decimals));
-    const target = pct >= 1 ? bal : bal * pct;
+    const sel = $("walletSelect");
+    const amtInput = $("amountInput");
+    const recInput = $("recipientInput");
 
-    const inp = $("amountInput");
-    if (inp) inp.value = String(target > 0 ? target : 0);
+    if (!sel || !amtInput || !recInput) return;
 
-    validateAmount();
-  } catch (e) {
-    uiError("Could not set amount from balance.", e);
-  }
-}
+    const from = sel.value;
+    const recipient = recInput.value.trim();
+    const amount = parseFloat(amtInput.value || "0");
 
-async function sendTokens() {
-  try {
-    if (!connectedAddress || !tokenWrite) return uiError("Connect wallet first.");
+    if (!from) return uiError("Please select a source wallet.");
+    if (!recipient) return uiError("Please enter a recipient address.");
+    if (amount <= 0) return uiError("Please enter a valid amount.");
 
-    const amount = parseFloat($("amountInput")?.value || "0");
-    const recipient = ($("recipientInput")?.value || "").trim();
+    const checksummedRecipient = ethers.getAddress(recipient);
 
-    if (!recipient || recipient.length !== 42 || !recipient.startsWith("0x")) {
-      return uiError("Enter a valid recipient address (0x...).");
+    if (!signer || !tokenWrite) {
+      return uiError("Wallet not connected.");
     }
-    if (!(amount > 0)) return uiError("Enter a valid amount.");
+
+    showLoading("Preparing transfer…");
 
     const decimals = connectedSnapshot.decimals || 18;
-    const bnAmount = ethers.parseUnits(String(amount), decimals);
+    const amountBn = ethers.parseUnits(String(amount), decimals);
 
-    showLoading("Sending MMM transfer…");
-    const tx = await tokenWrite.transfer(ethers.getAddress(recipient), bnAmount);
+    const bal = await tokenRead.balanceOf(from);
+    if (bal < amountBn) {
+      hideLoading();
+      return uiError(`Insufficient balance. You have ${ethers.formatUnits(bal, decimals)} MMM`);
+    }
+
+    showLoading("Sending transaction…");
+    const tx = await tokenWrite.transfer(checksummedRecipient, amountBn, { gasLimit: 200000n });
+
+    showLoading("Waiting for confirmation…");
     const rcpt = await tx.wait();
 
     actions.unshift({
       type: "SEND",
-      amountMon: "",
+      amountMon: "—",
       amountMmm: `${amount} MMM`,
-      quote: `To ${shortAddr(recipient)}`,
+      quote: "—",
       txHash: rcpt.hash,
       status: "Completed",
       dateTime: nowDateTime(),
     });
 
-    if ($("amountInput")) $("amountInput").value = "";
-    if ($("recipientInput")) $("recipientInput").value = "";
-
     saveData();
     hideLoading();
+
+    amtInput.value = "";
+    recInput.value = "";
+
     await refreshAll();
   } catch (e) {
     hideLoading();
@@ -961,105 +988,121 @@ async function sendTokens() {
   }
 }
 
-/* =========================
-   Swap
-========================= */
-function getSlippageBps() {
-  const v = parseFloat(($("swapSlippage")?.value || "1"));
-  return Math.floor((Number.isFinite(v) ? v : 1) * 100); // 1% -> 100 bps
-}
+function fillPercent(pct) {
+  const sel = $("walletSelect");
+  const amtInput = $("amountInput");
+  const balSpan = $("availableBalance");
 
-function deadlineTs() {
-  return Math.floor(Date.now() / 1000) + 600; // +10 minutes
-}
+  if (!sel || !amtInput || !balSpan) return;
 
-async function updateSwapQuoteAndButtons() {
-  const approveBtn = $("swapApproveBtn");
-  const execBtn = $("swapExecBtn");
+  const text = balSpan.textContent || "";
+  const num = parseFloat(text.replace(/[^\d.]/g, ""));
 
-  try {
-    const side = ($("swapSide")?.value || "buy").toLowerCase(); // buy/sell
-    const inAmt = parseFloat($("swapAmountIn")?.value || "0");
-
-    if (!connectedAddress || !signer) {
-      if (approveBtn) approveBtn.disabled = true;
-      if (execBtn) execBtn.disabled = true;
-      setText("swapQuoteOut", "—");
-      return;
-    }
-
-    // BUY needs no approve, SELL needs approve
-    if (approveBtn) approveBtn.disabled = (side !== "sell");
-    if (execBtn) execBtn.disabled = !(inAmt > 0);
-
-    const pair = await ensurePair();
-    if (!pair || !(inAmt > 0)) {
-      setText("swapQuoteOut", pair ? "Enter amount" : "No liquidity");
-      return;
-    }
-
-    const decimals = connectedSnapshot.decimals || 18;
-
-    if (side === "buy") {
-      const out = await quoteOutFromReserves(
-        ethers.parseEther(String(inAmt)),
-        EFFECTIVE_WMON,
-        CONFIG.mmmToken
-      );
-      setText("swapQuoteOut", `≈ ${fmt(Number(ethers.formatUnits(out, decimals)), 6)} MMM`);
-    } else {
-      const out = await quoteOutFromReserves(
-        ethers.parseUnits(String(inAmt), decimals),
-        CONFIG.mmmToken,
-        EFFECTIVE_WMON
-      );
-      setText("swapQuoteOut", `≈ ${fmt(Number(ethers.formatEther(out)), 6)} MON`);
-    }
-  } catch (e) {
-    console.warn("updateSwapQuoteAndButtons failed:", e);
-    setText("swapQuoteOut", "Error");
-    if (approveBtn) approveBtn.disabled = true;
-    if (execBtn) execBtn.disabled = true;
+  if (Number.isFinite(num) && num > 0) {
+    const filled = num * pct;
+    amtInput.value = filled.toFixed(6);
   }
 }
 
-async function approveMMMMax() {
-  try {
-    if (!tokenWrite || !connectedAddress) return uiError("Connect wallet first.");
+/* =========================
+   Swap logic
+========================= */
+async function updateSwapQuoteAndButtons() {
+  const sideSelect = $("swapSide");
+  const amtInput = $("swapAmountIn");
+  const quoteOut = $("swapQuoteOut");
+  const approveBtn = $("swapApproveBtn");
+  const execBtn = $("swapExecBtn");
 
-    showLoading("Approving MMM…");
-    const tx = await tokenWrite.approve(CONFIG.router, ethers.MaxUint256);
+  if (!sideSelect || !amtInput || !quoteOut || !approveBtn || !execBtn) return;
+
+  const side = sideSelect.value;
+  const amountIn = parseFloat(amtInput.value || "0");
+
+  approveBtn.disabled = true;
+  execBtn.disabled = true;
+
+  if (amountIn <= 0 || !pairRead) {
+    quoteOut.textContent = "—";
+    return;
+  }
+
+  try {
+    if (side === "buy") {
+      const decimals = connectedSnapshot.decimals || 18;
+      const ethIn = ethers.parseEther(String(amountIn));
+      const mmmOut = await quoteOutFromReserves(ethIn, EFFECTIVE_WMON, CONFIG.mmmToken);
+      const mmmHuman = Number(ethers.formatUnits(mmmOut, decimals));
+      quoteOut.textContent = `${fmtCompact(mmmHuman, 6)} MMM`;
+
+      if (signer) {
+        execBtn.disabled = false;
+      }
+    } else {
+      const decimals = connectedSnapshot.decimals || 18;
+      const mmmIn = ethers.parseUnits(String(amountIn), decimals);
+      const monOut = await quoteOutFromReserves(mmmIn, CONFIG.mmmToken, EFFECTIVE_WMON);
+      const monHuman = Number(ethers.formatEther(monOut));
+      quoteOut.textContent = `${monHuman.toFixed(6)} MON`;
+
+      if (signer) {
+        const allowance = await tokenRead.allowance(connectedAddress, CONFIG.router);
+        if (allowance < mmmIn) {
+          approveBtn.disabled = false;
+        }
+        execBtn.disabled = false;
+      }
+    }
+  } catch (e) {
+    quoteOut.textContent = "—";
+  }
+}
+
+async function approveSwap() {
+  try {
+    if (!signer || !tokenWrite) {
+      return uiError("Please connect your wallet first.");
+    }
+
+    showLoading("Approving MMM for router…");
+
+    const maxUint = ethers.MaxUint256;
+    const tx = await tokenWrite.approve(CONFIG.router, maxUint, { gasLimit: 100000n });
+
     await tx.wait();
+
     hideLoading();
     await updateSwapQuoteAndButtons();
   } catch (e) {
     hideLoading();
-    uiError(`Approve failed: ${e?.message || e}`, e);
+    uiError(`Approval failed: ${e?.message || e}`, e);
   }
 }
 
-async function executeSwap() {
+async function execSwap() {
   try {
-    if (!routerWrite || !signer || !connectedAddress) return uiError("Connect wallet first.");
-
-    const side = ($("swapSide")?.value || "buy").toLowerCase();
-    const amountInStr = ($("swapAmountIn")?.value || "").trim();
-    const amountIn = parseFloat(amountInStr);
-
-    if (!amountInStr || !Number.isFinite(amountIn) || !(amountIn > 0)) {
-      return uiError("Enter a valid amount.");
+    if (!signer || !routerWrite) {
+      return uiError("Please connect your wallet first.");
     }
 
-    const pair = await ensurePair();
-    if (!pair) return uiError("No liquidity pair exists. Add liquidity first.");
+    const sideSelect = $("swapSide");
+    const amtInput = $("swapAmountIn");
+    const slippageSelect = $("swapSlippage");
 
-    const slippageBps = getSlippageBps();
-    const deadline = deadlineTs();
+    if (!sideSelect || !amtInput || !slippageSelect) return;
+
+    const side = sideSelect.value;
+    const amountIn = parseFloat(amtInput.value || "0");
+    const slippagePct = parseFloat(slippageSelect.value || "1");
+
+    if (amountIn <= 0) return uiError("Enter a valid amount.");
+
+    const slippageBps = Math.floor(slippagePct * 100);
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
     const to = connectedAddress;
 
     showLoading("Preparing swap…");
 
-    // BUY: MON -> MMM
     if (side === "buy") {
       const value = ethers.parseEther(String(amountIn));
       const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
@@ -1084,16 +1127,14 @@ async function executeSwap() {
 
       const rcpt = await tx.wait();
 
-      const amountMonIn = Number(amountIn); // user input (e.g. 0.05)
+      const amountMonIn = Number(amountIn);
       const outMmmHuman = Number(ethers.formatUnits(out, connectedSnapshot.decimals || 18));
 
       const pricePaidMonPerMmm = outMmmHuman > 0 ? (amountMonIn / outMmmHuman) : 0;
 
-      // cells
       const amountMonStr = `${amountMonIn} MON`;
       const amountMmmStr = `${fmtCompact(outMmmHuman)} MMM`;
 
-      // quote column will now show: 0.0000235377 (MON/MMM)
       const quoteStr = `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`;
 
 
@@ -1156,7 +1197,7 @@ async function executeSwap() {
 
     const amountMmmStr = `${amountMmmIn} MMM`;
     const amountMonStr = `${outMonHuman.toFixed(6)} MON`;
-    const quoteStr = fmtTiny(pricePaidMonPerMmm, 10); // << unit price
+    const quoteStr = fmtTiny(pricePaidMonPerMmm, 10);
 
     actions.unshift({
      type: "SELL",
@@ -1197,11 +1238,11 @@ async function refreshAll() {
     connectedSnapshot.decimals = Number(decimals);
 
     // protocol KPIs
-    const taxesRaw = await tokenRead.balanceOf(CONFIG.mmmToken).catch(() => 0n);
+    const taxesRaw = await tokenRead.balanceOf(CONFIG.taxVault).catch(() => 0n);
     protocolSnapshot.taxesMMM = Number(ethers.formatUnits(taxesRaw, connectedSnapshot.decimals));
 
-    const trackerMonRaw = await readProvider.getBalance(CONFIG.tracker).catch(() => 0n);
-    protocolSnapshot.trackerMon = Number(ethers.formatEther(trackerMonRaw));
+    const rewardVaultMonRaw = await readProvider.getBalance(CONFIG.rewardVault).catch(() => 0n);
+    protocolSnapshot.rewardVaultMon = Number(ethers.formatEther(rewardVaultMonRaw));
 
     protocolSnapshot.mmmPerMon = await quoteMmmPerMon(connectedSnapshot.decimals);
     protocolSnapshot.lastRefresh = new Date();
@@ -1269,10 +1310,56 @@ async function copyText(text) {
 }
 
 /* =========================
+   UI bindings
+========================= */
+function bindUI() {
+  const connectBtn = $("connectBtn");
+  const disconnectBtn = $("disconnectBtn");
+  const refreshBtn = $("refreshBtn");
+  const addWatchBtn = $("addWatchBtn");
+  const watchConnectedBtn = $("watchConnectedBtn");
+  const clearLogBtn = $("clearLogBtn");
+  const resetBtn = $("resetBtn");
+  const sendBtn = $("sendBtn");
+  const walletSelect = $("walletSelect");
+  const swapSide = $("swapSide");
+  const swapAmountIn = $("swapAmountIn");
+  const swapSlippage = $("swapSlippage");
+  const swapApproveBtn = $("swapApproveBtn");
+  const swapExecBtn = $("swapExecBtn");
+
+  if (connectBtn) connectBtn.addEventListener("click", () => connectWallet(false));
+  if (disconnectBtn) disconnectBtn.addEventListener("click", disconnectWallet);
+  if (refreshBtn) refreshBtn.addEventListener("click", refreshAll);
+  if (addWatchBtn) addWatchBtn.addEventListener("click", addWallet);
+  if (watchConnectedBtn) watchConnectedBtn.addEventListener("click", watchConnected);
+  if (clearLogBtn) clearLogBtn.addEventListener("click", clearLog);
+  if (resetBtn) resetBtn.addEventListener("click", resetAll);
+  if (sendBtn) sendBtn.addEventListener("click", sendMmm);
+
+  if (walletSelect) walletSelect.addEventListener("change", updateAvailableBalance);
+
+  if (swapSide) swapSide.addEventListener("change", updateSwapQuoteAndButtons);
+  if (swapAmountIn) swapAmountIn.addEventListener("input", updateSwapQuoteAndButtons);
+  if (swapSlippage) swapSlippage.addEventListener("change", updateSwapQuoteAndButtons);
+  if (swapApproveBtn) swapApproveBtn.addEventListener("click", approveSwap);
+  if (swapExecBtn) swapExecBtn.addEventListener("click", execSwap);
+
+  // Percent chips
+  const chips = document.querySelectorAll(".chip[data-pct]");
+  chips.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const pct = parseFloat(chip.dataset.pct || "0");
+      fillPercent(pct);
+    });
+  });
+}
+
+/* =========================
    Boot
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  // explorer links (must exist in your HTML)
+  // explorer links
   const mmmLink = $("mmmLink");
   const trackerLink = $("trackerLink");
   const poolLink = $("poolLink");
@@ -1282,12 +1369,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
   if (trackerLink) {
-    trackerLink.textContent = CONFIG.tracker;
-    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
+    trackerLink.textContent = CONFIG.rewardVault;
+    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.rewardVault}`;
   }
   if (poolLink) {
-    poolLink.textContent = CONFIG.pool;
-    poolLink.href = `${CONFIG.explorerBase}/address/${CONFIG.pool}`;
+    poolLink.textContent = pairAddress || "—";
+    if (pairAddress) {
+      poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
+    }
   }
 
   initWatchedSlider();
@@ -1302,6 +1391,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   setHeaderConnectionUI(false);
 
   await initReadSide();
+
+  // Update pool link after pair address is known
+  if (poolLink && pairAddress) {
+    poolLink.textContent = pairAddress;
+    poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
+  }
 
   // initial renders (before refresh)
   renderConnectedCard();
@@ -1325,6 +1420,5 @@ document.addEventListener("DOMContentLoaded", async () => {
 function fmtTiny(x, decimals = 10) {
   const n = Number(x);
   if (!Number.isFinite(n) || n <= 0) return "—";
-  // show more precision for tiny numbers, but trim trailing zeros
   return n.toFixed(decimals).replace(/\.?0+$/, "");
 }
