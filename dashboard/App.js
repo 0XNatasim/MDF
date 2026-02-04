@@ -112,6 +112,40 @@ let protocolSnapshot = {
 ========================= */
 const $ = (id) => document.getElementById(id);
 
+function computeClaimTimers({
+  holdStartTs,
+  minHoldSec,
+  lastClaimAt,
+  cooldownSec,
+}) {
+  const now = Math.floor(Date.now() / 1000);
+
+  // HOLD TIMER
+  let holdRemaining = 0;
+  if (!holdStartTs) {
+    holdRemaining = minHoldSec;
+  } else {
+    holdRemaining = Math.max(0, holdStartTs + minHoldSec - now);
+  }
+
+  // COOLDOWN TIMER
+  let cooldownRemaining = 0;
+  if (lastClaimAt && lastClaimAt > 0) {
+    cooldownRemaining = Math.max(0, lastClaimAt + cooldownSec - now);
+  }
+
+  return { holdRemaining, cooldownRemaining };
+}
+
+function formatCountdown(sec) {
+  if (sec <= 0) return "Ready";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h}h ${m}m ${s}s`;
+}
+
+
 function setText(id, v) {
   const el = $(id);
   if (el) el.textContent = v;
@@ -658,7 +692,6 @@ function updateKPIs() {
     setText("kpiRefresh", "—");
   }
 }
-
 /* =========================
    Connected wallet card
 ========================= */
@@ -671,32 +704,77 @@ function renderConnectedCard() {
     return;
   }
 
+  const now = Math.floor(Date.now() / 1000);
+
   const addr = connectedSnapshot.address || connectedAddress;
-  const mmm = connectedSnapshot.mmmHoldings;
-  const claimMon = connectedSnapshot.claimableMon;
+  const mmm = connectedSnapshot.mmmHoldings || 0;
+  const claimMon = connectedSnapshot.claimableMon || 0;
 
-  const canClaim = claimMon > 0;
+  // timers from protocol snapshot
+  const minHoldSec = Number(protocolSnapshot.minHoldSec || 0);
+  const cooldownSec = Number(protocolSnapshot.cooldownSec || 0);
 
-  const html = `
+  // wallet-specific timestamps
+  const holdStartTs = connectedSnapshot.holdStartTs || 0;
+  const lastClaimAt = connectedSnapshot.lastClaimAt || 0;
+
+  // HOLD TIMER
+  let holdRemaining = minHoldSec;
+  if (holdStartTs > 0) {
+    holdRemaining = Math.max(0, holdStartTs + minHoldSec - now);
+  }
+
+  // COOLDOWN TIMER
+  let cooldownRemaining = 0;
+  if (lastClaimAt > 0) {
+    cooldownRemaining = Math.max(0, lastClaimAt + cooldownSec - now);
+  }
+
+  const holdText =
+    holdRemaining === 0
+      ? `<span class="ok">Ready</span>`
+      : formatCountdown(holdRemaining);
+
+  const cooldownText =
+    cooldownRemaining === 0
+      ? `<span class="ok">Ready</span>`
+      : formatCountdown(cooldownRemaining);
+
+  const canClaim =
+    claimMon > 0 &&
+    holdRemaining === 0 &&
+    cooldownRemaining === 0;
+
+  container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
         <div class="wallet-id">
           <div class="wallet-mark">W</div>
-          <div>
+          <div style="min-width:0;">
             <h3 class="wallet-name">Connected Wallet</h3>
             <div class="wallet-addr mono">
               ${escapeHtml(addr)}
-              <button class="icon-btn" onclick="copyText('${addr}')" title="Copy address">
+              <button class="icon-btn"
+                      onclick="copyText('${addr}')"
+                      title="Copy address">
                 <i class="fas fa-copy"></i>
               </button>
             </div>
           </div>
         </div>
-        ${canClaim ? `
-        <button class="btn btn--primary" onclick="claimRewards('${addr}')">
-          <i class="fas fa-hand-holding-dollar"></i> Claim
-        </button>
-        ` : ""}
+
+        ${
+          canClaim
+            ? `
+          <button class="btn btn--primary"
+                  onclick="claimRewards('${addr}')">
+            <i class="fas fa-hand-holding-dollar"></i> Claim
+          </button>`
+            : `
+          <button class="btn btn--ghost" disabled>
+            <i class="fas fa-clock"></i> Not eligible
+          </button>`
+        }
       </div>
 
       <div class="wallet-metrics">
@@ -704,15 +782,24 @@ function renderConnectedCard() {
           <span class="k">MMM Holdings:</span>
           <span class="v mono">${formatMMM(mmm)}</span>
         </div>
+
         <div class="metric">
           <span class="k">Claimable MON:</span>
           <span class="v mono">${formatMon(claimMon)}</span>
         </div>
+
+        <div class="metric">
+          <span class="k">Hold Timer:</span>
+          <span class="v mono">${holdText}</span>
+        </div>
+
+        <div class="metric">
+          <span class="k">Cooldown:</span>
+          <span class="v mono">${cooldownText}</span>
+        </div>
       </div>
     </div>
   `;
-
-  container.innerHTML = html;
 }
 
 /* =========================
@@ -723,31 +810,70 @@ function renderWallets() {
   if (!container) return;
 
   if (!wallets.length) {
-    container.innerHTML = `<div style="padding:16px; color:rgba(255,255,255,0.55); text-align:center;">No watched wallets yet.</div>`;
+    container.innerHTML = `
+      <div style="padding:16px; color:rgba(255,255,255,0.55); text-align:center;">
+        No watched wallets yet.
+      </div>`;
     return;
   }
 
+  const now = Math.floor(Date.now() / 1000);
+
   container.innerHTML = wallets
     .map((w) => {
-      const canClaim = w.claimableMon > 0;
+      // --- eligibility timers ---
+      const minHoldSec = Number(protocolSnapshot.minHoldSec || 0);
+      const cooldownSec = Number(protocolSnapshot.cooldownSec || 0);
+      const lastClaimAt = Number(w.lastClaimAt || 0);
+
+      // HOLD TIMER
+      let holdRemaining = minHoldSec;
+      if (w.holdStartTs) {
+        holdRemaining = Math.max(0, w.holdStartTs + minHoldSec - now);
+      }
+
+      // COOLDOWN TIMER
+      let cooldownRemaining = 0;
+      if (lastClaimAt > 0) {
+        cooldownRemaining = Math.max(0, lastClaimAt + cooldownSec - now);
+      }
+
+      const holdText = holdRemaining === 0
+        ? `<span class="ok">Ready</span>`
+        : formatCountdown(holdRemaining);
+
+      const cooldownText = cooldownRemaining === 0
+        ? `<span class="ok">Ready</span>`
+        : formatCountdown(cooldownRemaining);
+
+      const canClaim =
+        w.claimableMon > 0 &&
+        holdRemaining === 0 &&
+        cooldownRemaining === 0;
 
       return `
         <div class="wallet-card">
           <div class="wallet-top">
             <div class="wallet-id">
-              <div class="wallet-mark">${escapeHtml(w.name.charAt(0).toUpperCase())}</div>
+              <div class="wallet-mark">
+                ${escapeHtml(w.name.charAt(0).toUpperCase())}
+              </div>
               <div style="min-width:0;">
                 <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
                 <div class="wallet-addr mono">
                   ${escapeHtml(w.address)}
-                  <button class="icon-btn" onclick="copyText('${w.address}')" title="Copy address">
+                  <button class="icon-btn"
+                          onclick="copyText('${w.address}')"
+                          title="Copy address">
                     <i class="fas fa-copy"></i>
                   </button>
                 </div>
               </div>
             </div>
 
-            <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
+            <button class="icon-btn"
+                    onclick="removeWallet('${w.id}')"
+                    title="Remove">
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -757,22 +883,43 @@ function renderWallets() {
               <span class="k">MMM Holdings:</span>
               <span class="v mono">${formatMMM(w.mmmHoldings)}</span>
             </div>
+
             <div class="metric">
               <span class="k">Claimable MON:</span>
               <span class="v mono">${formatMon(w.claimableMon)}</span>
             </div>
+
+            <div class="metric">
+              <span class="k">Hold Timer:</span>
+              <span class="v mono">${holdText}</span>
+            </div>
+
+            <div class="metric">
+              <span class="k">Cooldown:</span>
+              <span class="v mono">${cooldownText}</span>
+            </div>
           </div>
 
-          ${canClaim ? `
-          <button class="btn btn--secondary btn--block" onclick="claimRewards('${w.address}')">
-            <i class="fas fa-hand-holding-dollar"></i> Claim Rewards
-          </button>
-          ` : ""}
+          ${
+            canClaim
+              ? `
+            <button class="btn btn--secondary btn--block"
+                    onclick="claimRewards('${w.address}')">
+              <i class="fas fa-hand-holding-dollar"></i>
+              Claim Rewards
+            </button>`
+              : `
+            <button class="btn btn--ghost btn--block" disabled>
+              <i class="fas fa-clock"></i>
+              Not eligible yet
+            </button>`
+          }
         </div>
       `;
     })
     .join("");
 }
+
 
 function addWallet() {
   const addr = prompt("Enter wallet address to watch:");
