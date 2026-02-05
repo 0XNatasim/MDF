@@ -41,15 +41,15 @@ const ERC20_ABI = [
 ];
 
 const ROUTER_ABI = [
-  "function factory() view returns (address)",
-  "function WETH() view returns (address)",
+  "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)",
+];
 
-  "function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) payable returns (uint256[] memory amounts)",
-  "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) payable",
-  "function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)",
-  "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline)",
-
-  "function getAmountsOut(uint256 amountIn, address[] memory path) view returns (uint256[] memory amounts)",
+const WMON_ABI = [
+  "function deposit() payable",
+  "function withdraw(uint256 amount)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
 ];
 
 const FACTORY_ABI = [
@@ -82,6 +82,9 @@ let tokenRead, rewardVaultRead, routerRead, factoryRead;
 let tokenWrite = null, rewardVaultWrite = null, routerWrite = null;
 
 let EFFECTIVE_WMON = null;
+
+let wmonRead = null;
+let wmonWrite = null;
 let pairRead = null;
 let pairAddress = null;
 
@@ -307,9 +310,14 @@ async function initReadSide() {
   routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
 
   try {
-    const factAddr = await routerRead.factory();
-    factoryRead = new ethers.Contract(factAddr, FACTORY_ABI, readProvider);
-    logInfo("Factory at:", factAddr);
+    // Use WMON from CONFIG directly since MockRouter doesn't have WETH() getter
+    EFFECTIVE_WMON = CONFIG.wmon;
+    wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
+
+    // MockRouter doesn't have factory, skip pair setup
+    factoryRead = null;
+    pairRead = null;
+    pairAddress = null;
   } catch (e) {
     console.warn("Could not read factory from router:", e);
   }
@@ -367,6 +375,7 @@ async function connectWallet(silent = false) {
     tokenWrite = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
     rewardVaultWrite = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, signer);
     routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
+    wmonWrite = new ethers.Contract(CONFIG.wmon, WMON_ABI, signer);
 
     setHeaderConnectionUI(true);
     await refreshAll();
@@ -1292,7 +1301,7 @@ async function approveSwap() {
 
 async function execSwap() {
   try {
-    if (!signer || !routerWrite) {
+    if (!signer || !routerWrite || !wmonWrite) {
       return uiError("Please connect your wallet first.");
     }
 
@@ -1314,40 +1323,45 @@ async function execSwap() {
 
     showLoading("Preparing swap…");
 
+    // ===== BUY: MON → WMON → MMM =====
     if (side === "buy") {
       const value = ethers.parseEther(String(amountIn));
-      const path = [EFFECTIVE_WMON, CONFIG.mmmToken];
+      
+      // Step 1: Wrap MON to WMON
+      showLoading("Wrapping MON to WMON...");
+      const wrapTx = await wmonWrite.deposit({ value });
+      await wrapTx.wait();
+      
+      // Step 2: Approve WMON to router
+      showLoading("Approving WMON...");
+      const approveTx = await wmonWrite.approve(CONFIG.router, value);
+      await approveTx.wait();
+      
+      // Step 3: Swap WMON → MMM
+      const path = [CONFIG.wmon, CONFIG.mmmToken];
+      
+      // Calculate minOut (1:1 ratio in mock, minus slippage)
+      const expectedOut = value;
+      const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
 
-      const out = await quoteOutFromReserves(value, EFFECTIVE_WMON, CONFIG.mmmToken);
-      const minOut = out - (out * BigInt(slippageBps)) / 10_000n;
-
-      const txReq =
-        await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens.populateTransaction(
-          minOut, path, to, deadline, { value }
-        );
-
-      if (!txReq.data || txReq.data === "0x") throw new Error("Swap calldata is empty (ABI mismatch).");
-
-      showLoading("Sending buy swap transaction…");
-      const tx = await signer.sendTransaction({
-        to: CONFIG.router,
-        data: txReq.data,
+      showLoading("Swapping WMON → MMM...");
+      const tx = await routerWrite.swapExactTokensForTokens(
         value,
-        gasLimit: 500000n,
-      });
+        minOut,
+        path,
+        to,
+        deadline
+      );
 
       const rcpt = await tx.wait();
 
       const amountMonIn = Number(amountIn);
-      const outMmmHuman = Number(ethers.formatUnits(out, connectedSnapshot.decimals || 18));
-
+      const outMmmHuman = Number(ethers.formatUnits(expectedOut, connectedSnapshot.decimals || 18));
       const pricePaidMonPerMmm = outMmmHuman > 0 ? (amountMonIn / outMmmHuman) : 0;
 
       const amountMonStr = `${amountMonIn} MON`;
       const amountMmmStr = `${fmtCompact(outMmmHuman)} MMM`;
-
       const quoteStr = `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`;
-
 
       actions.unshift({
         type: "BUY",
@@ -1359,18 +1373,16 @@ async function execSwap() {
         dateTime: nowDateTime(),
       });
 
-
       saveData();
       hideLoading();
       await refreshAll();
       return;
     }
 
-    // SELL: MMM -> MON
+    // ===== SELL: MMM → WMON → MON =====
     const decimals = connectedSnapshot.decimals || 18;
     const amountInBn = ethers.parseUnits(String(amountIn), decimals);
-    const path = [CONFIG.mmmToken, EFFECTIVE_WMON];
-
+    
     const bal = await tokenRead.balanceOf(connectedAddress);
     if (bal < amountInBn) {
       hideLoading();
@@ -1383,27 +1395,27 @@ async function execSwap() {
       return uiError("Insufficient allowance. Click 'Approve MMM' first.");
     }
 
-    const out = await quoteOutFromReserves(amountInBn, CONFIG.mmmToken, EFFECTIVE_WMON);
-    const minOut = out - (out * BigInt(slippageBps)) / 10_000n;
+    const path = [CONFIG.mmmToken, CONFIG.wmon];
+    const expectedOut = amountInBn;
+    const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
 
-    const txReq =
-      await routerWrite.swapExactTokensForETHSupportingFeeOnTransferTokens.populateTransaction(
-        amountInBn, minOut, path, to, deadline
-      );
+    showLoading("Swapping MMM → WMON...");
+    const swapTx = await routerWrite.swapExactTokensForTokens(
+      amountInBn,
+      minOut,
+      path,
+      connectedAddress,
+      deadline
+    );
+    await swapTx.wait();
 
-    if (!txReq.data || txReq.data === "0x") throw new Error("Swap calldata is empty (ABI mismatch).");
-
-    showLoading("Sending sell swap transaction…");
-    const tx = await signer.sendTransaction({
-      to: CONFIG.router,
-      data: txReq.data,
-      gasLimit: 500000n,
-    });
-
-    const rcpt = await tx.wait();
+    showLoading("Unwrapping WMON to MON...");
+    const wmonBal = await wmonRead.balanceOf(connectedAddress);
+    const unwrapTx = await wmonWrite.withdraw(wmonBal);
+    const rcpt = await unwrapTx.wait();
 
     const amountMmmIn = Number(amountIn);
-    const outMonHuman = Number(ethers.formatEther(out));
+    const outMonHuman = Number(ethers.formatEther(wmonBal));
     const pricePaidMonPerMmm = amountMmmIn > 0 ? (outMonHuman / amountMmmIn) : 0;
 
     const amountMmmStr = `${amountMmmIn} MMM`;
@@ -1411,13 +1423,13 @@ async function execSwap() {
     const quoteStr = fmtTiny(pricePaidMonPerMmm, 10);
 
     actions.unshift({
-     type: "SELL",
-     amountMon: amountMonStr,
-     amountMmm: amountMmmStr,
-     quote: quoteStr,
-     txHash: rcpt.hash,
-     status: "Completed",
-     dateTime: nowDateTime(),
+      type: "SELL",
+      amountMon: amountMonStr,
+      amountMmm: amountMmmStr,
+      quote: quoteStr,
+      txHash: rcpt.hash,
+      status: "Completed",
+      dateTime: nowDateTime(),
     });
 
     saveData();
@@ -1436,6 +1448,7 @@ async function execSwap() {
     uiError(`Swap failed: ${msg}`, e);
   }
 }
+
 
 /* =========================
    Refresh
