@@ -62,19 +62,14 @@ const PAIR_ABI = [
   "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32)",
 ];
 
-const VAULT_ABI = [
-  "function claimable(address) view returns (uint256)",
-  "function pendingReward(address) view returns (uint256)",
-  "function withdrawableDividendOf(address) view returns (uint256)",
-  "function withdrawableRewardsOf(address) view returns (uint256)",
-  "function earned(address) view returns (uint256)",
+const REWARD_VAULT_ABI = [
+  "function pending(address) view returns (uint256)",
+  "function lastClaimAt(address) view returns (uint256)",
+  "function minHoldTimeSec() view returns (uint256)",
+  "function claimCooldown() view returns (uint256)",
+  "function minBalance() view returns (uint256)",
   "function claim()",
-  "function claim(address)",
-  "function claimDividend()",
-  "function claimForAccount(address)",
-  "function processAccount(address,bool) returns (bool)",
 ];
-
 /* =========================
    STATE
 ========================= */
@@ -215,6 +210,16 @@ function hideLoading() {
 function uiError(msg, errObj) {
   console.error("[MMM][ERROR]", msg, errObj || "");
   alert(msg);
+}
+function formatDuration(sec) {
+  sec = Math.max(0, Number(sec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 /* =========================
@@ -360,7 +365,7 @@ async function connectWallet(silent = false) {
     signer = await browserProvider.getSigner();
 
     tokenWrite = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
-    rewardVaultWrite = new ethers.Contract(CONFIG.rewardVault, VAULT_ABI, signer);
+    rewardVaultWrite = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, signer);
     routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
 
     setHeaderConnectionUI(true);
@@ -442,81 +447,72 @@ function disconnectWallet() {
 }
 
 /* =========================
-   Claim logic
+   Claim logic (RewardVault v1)
 ========================= */
+
+/**
+ * Read pending rewards from RewardVault
+ */
 async function getClaimableMon(addr) {
   if (!rewardVaultRead) return 0n;
 
-  // Try multiple methods
-  const methods = [
-    "claimable",
-    "withdrawableDividendOf",
-    "withdrawableRewardsOf",
-    "pendingReward",
-    "earned",
-  ];
-
-  for (const m of methods) {
-    try {
-      const val = await rewardVaultRead[m](addr);
-      if (val && val > 0n) return val;
-    } catch (_) {}
+  try {
+    return await rewardVaultRead.pending(addr);
+  } catch (e) {
+    console.warn("pending() failed:", e);
+    return 0n;
   }
-
-  return 0n;
 }
 
+/**
+ * Claim rewards for connected wallet only
+ */
 async function claimRewards(walletAddr) {
   try {
-    if (!rewardVaultWrite || !signer) {
-      return uiError("Wallet not connected or reward vault not available.");
+    if (!rewardVaultWrite || !signer || !connectedAddress) {
+      return uiError("Wallet not connected.");
     }
 
-    showLoading("Checking claimable rewards…");
+    // Security: only allow claiming for connected wallet
+    if (
+      ethers.getAddress(walletAddr) !==
+      ethers.getAddress(connectedAddress)
+    ) {
+      return uiError("You can only claim for the connected wallet.");
+    }
 
-    const claimable = await getClaimableMon(walletAddr);
-    if (claimable <= 0n) {
+    showLoading("Checking claim eligibility…");
+
+    const pending = await rewardVaultRead.pending(walletAddr);
+    if (pending <= 0n) {
       hideLoading();
-      return uiError("No claimable rewards for this wallet.");
+      return uiError("No rewards available to claim.");
     }
 
-    const claimableHuman = Number(ethers.formatEther(claimable));
+    const now = Math.floor(Date.now() / 1000);
+    const lastClaim = Number(await rewardVaultRead.lastClaimAt(walletAddr));
+    const cooldown = Number(await rewardVaultRead.claimCooldown());
 
-    // Try multiple claim methods
-    const claimMethods = [
-      { name: "claim", args: [walletAddr] },
-      { name: "claim", args: [] },
-      { name: "claimDividend", args: [] },
-      { name: "claimForAccount", args: [walletAddr] },
-    ];
-
-    let tx;
-    let usedMethod = "";
-
-    for (const { name, args } of claimMethods) {
-      try {
-        showLoading(`Attempting claim via ${name}…`);
-        tx = await rewardVaultWrite[name](...args, { gasLimit: 300000n });
-        usedMethod = name;
-        break;
-      } catch (e) {
-        logInfo(`Method ${name} failed:`, e.message);
-      }
-    }
-
-    if (!tx) {
+    if (lastClaim > 0 && now - lastClaim < cooldown) {
       hideLoading();
-      return uiError("All claim methods failed. The vault may not support claiming.");
+      const remaining = cooldown - (now - lastClaim);
+      return uiError(
+        `Claim cooldown active. Try again in ${formatDuration(remaining)}.`
+      );
     }
 
-    showLoading(`Claim transaction sent via ${usedMethod}. Waiting for confirmation…`);
+    showLoading("Sending claim transaction…");
+
+    const tx = await rewardVaultWrite.claim({ gasLimit: 300000n });
     const rcpt = await tx.wait();
+
+    const claimedHuman = Number(ethers.formatEther(pending));
 
     actions.unshift({
       type: "CLAIM",
-      amountMon: `${claimableHuman.toFixed(6)} MON`,
+      amountMon: `${claimedHuman.toFixed(6)} MON`,
       amountMmm: "—",
-      quote: "—",
+      quote: "RewardVault claim",
       txHash: rcpt.hash,
       status: "Completed",
       dateTime: nowDateTime(),
@@ -530,6 +526,7 @@ async function claimRewards(walletAddr) {
     uiError(`Claim failed: ${e?.message || e}`, e);
   }
 }
+
 
 /* =========================
    Pool reserves
@@ -674,7 +671,6 @@ async function quoteOutFromReserves(amountIn, tokenIn, tokenOut) {
 ========================= */
 function updateKPIs() {
   setText("kpiTaxes", formatMMM(protocolSnapshot.taxesMMM));
-  setText("kpiTrackerMon", formatMon(protocolSnapshot.rewardVaultMon));
 
   const price = protocolSnapshot.mmmPerMon;
   if (price !== null && price > 0) {
@@ -710,41 +706,60 @@ function renderConnectedCard() {
   const mmm = connectedSnapshot.mmmHoldings || 0;
   const claimMon = connectedSnapshot.claimableMon || 0;
 
-  // timers from protocol snapshot
-  const minHoldSec = Number(protocolSnapshot.minHoldSec || 0);
-  const cooldownSec = Number(protocolSnapshot.cooldownSec || 0);
+  // protocol parameters (already fetched in refreshAll)
+  const minHoldSec = Number(connectedSnapshot.minHoldTime || 0);
+  const cooldownSec = Number(connectedSnapshot.claimCooldown || 0);
+  const minBalance = Number(connectedSnapshot.minBalance || 0);
 
-  // wallet-specific timestamps
-  const holdStartTs = connectedSnapshot.holdStartTs || 0;
-  const lastClaimAt = connectedSnapshot.lastClaimAt || 0;
+  // wallet state
+  const lastClaimAt = Number(connectedSnapshot.lastClaimAt || 0);
+  const hasMinBalance = Boolean(connectedSnapshot.hasMinBalance);
 
-  // HOLD TIMER
-  let holdRemaining = minHoldSec;
-  if (holdStartTs > 0) {
-    holdRemaining = Math.max(0, holdStartTs + minHoldSec - now);
+  /* -------------------------
+     HOLD TIMER
+     (starts only once minBalance is met AND never guessed)
+  ------------------------- */
+  let holdRemaining = 0;
+  if (hasMinBalance && lastClaimAt === 0 && minHoldSec > 0) {
+    // first-time holders must wait full hold time
+    holdRemaining = minHoldSec;
   }
 
-  // COOLDOWN TIMER
+  /* -------------------------
+     COOLDOWN TIMER
+  ------------------------- */
   let cooldownRemaining = 0;
-  if (lastClaimAt > 0) {
-    cooldownRemaining = Math.max(0, lastClaimAt + cooldownSec - now);
+  if (lastClaimAt > 0 && cooldownSec > 0) {
+    cooldownRemaining = Math.max(
+      0,
+      lastClaimAt + cooldownSec - now
+    );
   }
+
+  /* -------------------------
+     Eligibility
+  ------------------------- */
+  const canClaim =
+    claimMon > 0 &&
+    hasMinBalance &&
+    holdRemaining === 0 &&
+    cooldownRemaining === 0;
 
   const holdText =
-    holdRemaining === 0
-      ? `<span class="ok">Ready</span>`
-      : formatCountdown(holdRemaining);
+    !hasMinBalance
+      ? `<span class="warn">Insufficient balance</span>`
+      : holdRemaining === 0
+        ? `<span class="ok">Ready</span>`
+        : formatCountdown(holdRemaining);
 
   const cooldownText =
     cooldownRemaining === 0
       ? `<span class="ok">Ready</span>`
       : formatCountdown(cooldownRemaining);
 
-  const canClaim =
-    claimMon > 0 &&
-    holdRemaining === 0 &&
-    cooldownRemaining === 0;
-
+  /* -------------------------
+     Render
+  ------------------------- */
   container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
@@ -789,7 +804,7 @@ function renderConnectedCard() {
         </div>
 
         <div class="metric">
-          <span class="k">Hold Timer:</span>
+          <span class="k">Hold requirement:</span>
           <span class="v mono">${holdText}</span>
         </div>
 
@@ -1382,66 +1397,126 @@ async function refreshAll() {
   try {
     showLoading("Refreshing on-chain data…");
 
-    // decimals
+    /* -------------------------
+       Token decimals
+    ------------------------- */
     const decimals = await tokenRead.decimals().catch(() => 18);
     connectedSnapshot.decimals = Number(decimals);
 
-    // protocol KPIs
-    const taxesRaw = await tokenRead.balanceOf(CONFIG.taxVault).catch(() => 0n);
-    protocolSnapshot.taxesMMM = Number(ethers.formatUnits(taxesRaw, connectedSnapshot.decimals));
+    /* -------------------------
+       Protocol KPIs
+    ------------------------- */
+    const taxesRaw = await tokenRead
+      .balanceOf(CONFIG.taxVault)
+      .catch(() => 0n);
 
-    const rewardVaultMonRaw = await readProvider.getBalance(CONFIG.rewardVault).catch(() => 0n);
-    protocolSnapshot.rewardVaultMon = Number(ethers.formatEther(rewardVaultMonRaw));
+    protocolSnapshot.taxesMMM = Number(
+      ethers.formatUnits(taxesRaw, connectedSnapshot.decimals)
+    );
 
-    protocolSnapshot.mmmPerMon = await quoteMmmPerMon(connectedSnapshot.decimals);
+    const rewardVaultMonRaw = await readProvider
+      .getBalance(CONFIG.rewardVault)
+      .catch(() => 0n);
+
+    protocolSnapshot.rewardVaultMon = Number(
+      ethers.formatEther(rewardVaultMonRaw)
+    );
+
+    protocolSnapshot.mmmPerMon = await quoteMmmPerMon(
+      connectedSnapshot.decimals
+    );
     protocolSnapshot.lastRefresh = new Date();
 
-    // watched wallets
+    /* -------------------------
+       Global RewardVault params
+       (read once)
+    ------------------------- */
+    const [
+      minBalanceRaw,
+      minHoldTime,
+      claimCooldown,
+    ] = await Promise.all([
+      rewardVaultRead.minBalance(),
+      rewardVaultRead.minHoldTimeSec(),
+      rewardVaultRead.claimCooldown(),
+    ]);
+
+    const minBalance = Number(
+      ethers.formatUnits(minBalanceRaw, connectedSnapshot.decimals)
+    );
+
+    /* -------------------------
+       Watched wallets
+    ------------------------- */
     for (const w of wallets) {
-      const [bal, claimMon] = await Promise.all([
+      const [
+        balRaw,
+        pendingRaw,
+        lastClaimRaw,
+      ] = await Promise.all([
         tokenRead.balanceOf(w.address).catch(() => 0n),
         getClaimableMon(w.address).catch(() => 0n),
+        rewardVaultRead.lastClaimAt(w.address).catch(() => 0n),
       ]);
 
-      w.mmmHoldings = Number(ethers.formatUnits(bal, connectedSnapshot.decimals));
-      w.claimableMon = Number(ethers.formatEther(claimMon));
-
-      // ⏱️ START HOLD TIMER when balance first meets minBalance
-      const minBal = Number(
-        ethers.formatUnits(await rewardVaultRead.minBalance(), connectedSnapshot.decimals)
+      w.mmmHoldings = Number(
+        ethers.formatUnits(balRaw, connectedSnapshot.decimals)
       );
+      w.claimableMon = Number(ethers.formatEther(pendingRaw));
 
-      if (mmm >= minBal && !w.holdStartTs) {
-        w.holdStartTs = Math.floor(Date.now() / 1000);
-      }
+      // timing data (used for countdowns)
+      w.lastClaimAt = Number(lastClaimRaw);
+      w.claimCooldown = Number(claimCooldown);
+      w.minHoldTime = Number(minHoldTime);
+      w.minBalance = minBalance;
 
-      // reset if balance drops below minBalance
-      if (mmm < minBal) {
-        w.holdStartTs = null;
-      }
+      // derived UI helper (optional but useful)
+      w.hasMinBalance = w.mmmHoldings >= minBalance;
     }
 
-    // connected wallet snapshot
+    /* -------------------------
+       Connected wallet snapshot
+       (YES: this feeds the connected card)
+    ------------------------- */
     if (connectedAddress) {
-      const [bal, claimMon] = await Promise.all([
+      const [
+        balRaw,
+        pendingRaw,
+        lastClaimRaw,
+      ] = await Promise.all([
         tokenRead.balanceOf(connectedAddress).catch(() => 0n),
         getClaimableMon(connectedAddress).catch(() => 0n),
+        rewardVaultRead.lastClaimAt(connectedAddress).catch(() => 0n),
       ]);
 
       connectedSnapshot.address = connectedAddress;
-      connectedSnapshot.mmmHoldings = Number(ethers.formatUnits(bal, connectedSnapshot.decimals));
-      connectedSnapshot.claimableMon = Number(ethers.formatEther(claimMon));
+      connectedSnapshot.mmmHoldings = Number(
+        ethers.formatUnits(balRaw, connectedSnapshot.decimals)
+      );
+      connectedSnapshot.claimableMon = Number(
+        ethers.formatEther(pendingRaw)
+      );
+
+      // timing data (same as watched wallets)
+      connectedSnapshot.lastClaimAt = Number(lastClaimRaw);
+      connectedSnapshot.claimCooldown = Number(claimCooldown);
+      connectedSnapshot.minHoldTime = Number(minHoldTime);
+      connectedSnapshot.minBalance = minBalance;
+      connectedSnapshot.hasMinBalance =
+        connectedSnapshot.mmmHoldings >= minBalance;
     } else {
       connectedSnapshot.address = null;
       connectedSnapshot.mmmHoldings = 0;
       connectedSnapshot.claimableMon = 0;
     }
 
-    // UI updates
+    /* -------------------------
+       UI updates
+    ------------------------- */
     await updatePoolReservesUI();
     updateKPIs();
-    renderConnectedCard();
-    renderWallets();
+    renderConnectedCard();   // uses connectedSnapshot
+    renderWallets();         // uses wallets[]
     renderActions();
     renderSendDropdown();
     await updateAvailableBalance();
@@ -1454,6 +1529,7 @@ async function refreshAll() {
     uiError(`Refresh failed: ${e?.message || e}`, e);
   }
 }
+
 
 /* =========================
    Clipboard
@@ -1524,17 +1600,13 @@ function bindUI() {
 document.addEventListener("DOMContentLoaded", async () => {
   // explorer links
   const mmmLink = $("mmmLink");
-  const trackerLink = $("trackerLink");
   const poolLink = $("poolLink");
 
   if (mmmLink) {
     mmmLink.textContent = CONFIG.mmmToken;
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
-  if (trackerLink) {
-    trackerLink.textContent = CONFIG.rewardVault;
-    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.rewardVault}`;
-  }
+
   if (poolLink) {
     poolLink.textContent = pairAddress || "—";
     if (pairAddress) {
