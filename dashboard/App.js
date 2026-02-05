@@ -303,7 +303,7 @@ async function initReadSide() {
   );
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
-  rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, VAULT_ABI, readProvider);
+  rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, readProvider);
   routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
 
   try {
@@ -1431,15 +1431,21 @@ async function refreshAll() {
        Global RewardVault params
        (read once)
     ------------------------- */
-    const [
-      minBalanceRaw,
-      minHoldTime,
-      claimCooldown,
-    ] = await Promise.all([
-      rewardVaultRead.minBalance(),
-      rewardVaultRead.minHoldTimeSec(),
-      rewardVaultRead.claimCooldown(),
-    ]);
+    let minBalanceRaw = 0n;
+    let minHoldTime = 0n;
+    let claimCooldown = 0n;
+
+    try {
+      if (rewardVaultRead) {
+        [minBalanceRaw, minHoldTime, claimCooldown] = await Promise.all([
+          rewardVaultRead.minBalance(),
+          rewardVaultRead.minHoldTimeSec(),
+          rewardVaultRead.claimCooldown(),
+        ]);
+      }
+    } catch (_) {
+      // do nothing – UI must never crash
+    }
 
     const minBalance = Number(
       ethers.formatUnits(minBalanceRaw, connectedSnapshot.decimals)
