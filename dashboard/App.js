@@ -1169,59 +1169,102 @@ function fillPercent(pct) {
 }
 
 /* =========================
-   Swap logic
+   Swap logic (safe + deterministic)
 ========================= */
 async function updateSwapQuoteAndButtons() {
-  const sideSelect = $("swapSide");
-  const amtInput = $("swapAmountIn");
-  const quoteOut = $("swapQuoteOut");
-  const approveBtn = $("swapApproveBtn");
-  const execBtn = $("swapExecBtn");
+  const sideSelect   = $("swapSide");
+  const amtInput     = $("swapAmountIn");
+  const quoteOut     = $("swapQuoteOut");
+  const approveBtn   = $("swapApproveBtn");
+  const execBtn      = $("swapExecBtn");
 
   if (!sideSelect || !amtInput || !quoteOut || !approveBtn || !execBtn) return;
 
-  const side = sideSelect.value;
-  const amountIn = parseFloat(amtInput.value || "0");
-
+  // HARD RESET (prevents stuck UI)
   approveBtn.disabled = true;
   execBtn.disabled = true;
 
-  if (amountIn <= 0 || !pairRead) {
+  const side = sideSelect.value;
+  const amountIn = Number(amtInput.value || 0);
+
+  // must be connected
+  if (!signer || !connectedAddress) {
+    quoteOut.textContent = "Connect wallet";
+    return;
+  }
+
+  // must have pool
+  if (!pairRead) {
+    quoteOut.textContent = "Pool not ready";
+    return;
+  }
+
+  if (!Number.isFinite(amountIn) || amountIn <= 0) {
     quoteOut.textContent = "—";
     return;
   }
 
   try {
+    /* ---------- BUY : MON → MMM ---------- */
     if (side === "buy") {
       const decimals = connectedSnapshot.decimals || 18;
       const ethIn = ethers.parseEther(String(amountIn));
-      const mmmOut = await quoteOutFromReserves(ethIn, EFFECTIVE_WMON, CONFIG.mmmToken);
-      const mmmHuman = Number(ethers.formatUnits(mmmOut, decimals));
+
+      const mmmOut = await quoteOutFromReserves(
+        ethIn,
+        EFFECTIVE_WMON,
+        CONFIG.mmmToken
+      );
+
+      const mmmHuman = Number(
+        ethers.formatUnits(mmmOut, decimals)
+      );
+
       quoteOut.textContent = `${fmtCompact(mmmHuman, 6)} MMM`;
 
-      if (signer) {
-        execBtn.disabled = false;
-      }
-    } else {
-      const decimals = connectedSnapshot.decimals || 18;
-      const mmmIn = ethers.parseUnits(String(amountIn), decimals);
-      const monOut = await quoteOutFromReserves(mmmIn, CONFIG.mmmToken, EFFECTIVE_WMON);
-      const monHuman = Number(ethers.formatEther(monOut));
-      quoteOut.textContent = `${monHuman.toFixed(6)} MON`;
+      // BUY never needs approval
+      execBtn.disabled = false;
+      approveBtn.disabled = true;
+      return;
+    }
 
-      if (signer) {
-        const allowance = await tokenRead.allowance(connectedAddress, CONFIG.router);
-        if (allowance < mmmIn) {
-          approveBtn.disabled = false;
-        }
-        execBtn.disabled = false;
-      }
+    /* ---------- SELL : MMM → MON ---------- */
+    const decimals = connectedSnapshot.decimals || 18;
+    const mmmIn = ethers.parseUnits(String(amountIn), decimals);
+
+    const monOut = await quoteOutFromReserves(
+      mmmIn,
+      CONFIG.mmmToken,
+      EFFECTIVE_WMON
+    );
+
+    const monHuman = Number(
+      ethers.formatEther(monOut)
+    );
+
+    quoteOut.textContent = `${monHuman.toFixed(6)} MON`;
+
+    const allowance = await tokenRead.allowance(
+      connectedAddress,
+      CONFIG.router
+    );
+
+    if (allowance < mmmIn) {
+      approveBtn.disabled = false;
+      execBtn.disabled = true;
+    } else {
+      approveBtn.disabled = true;
+      execBtn.disabled = false;
     }
   } catch (e) {
-    quoteOut.textContent = "—";
+    console.error("[SWAP QUOTE ERROR]", e);
+    quoteOut.textContent = "Quote failed";
   }
 }
 
+/* =========================
+   Approve MMM for router
+========================= */
 async function approveSwap() {
   try {
     if (!signer || !tokenWrite) {
@@ -1230,8 +1273,11 @@ async function approveSwap() {
 
     showLoading("Approving MMM for router…");
 
-    const maxUint = ethers.MaxUint256;
-    const tx = await tokenWrite.approve(CONFIG.router, maxUint, { gasLimit: 100000n });
+    const tx = await tokenWrite.approve(
+      CONFIG.router,
+      ethers.MaxUint256,
+      { gasLimit: 100000n }
+    );
 
     await tx.wait();
 
@@ -1242,6 +1288,7 @@ async function approveSwap() {
     uiError(`Approval failed: ${e?.message || e}`, e);
   }
 }
+
 
 async function execSwap() {
   try {
