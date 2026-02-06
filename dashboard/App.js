@@ -1,6 +1,7 @@
-/* App.js — MMM Dashboard (v1 deterministic)
-   Single-source-of-truth eligibility using on-chain timestamps only.
+/* App.js — MMM Dashboard (v1.1 corrected eligibility)
+   Single-source-of-truth using on-chain timestamps only.
    NO local timers. NO guessed state. NO divergence.
+   FIXED: Proper hold time calculation for all scenarios.
 */
 
 "use strict";
@@ -132,7 +133,7 @@ async function connectWallet() {
 }
 
 /* =========================
-   ELIGIBILITY (AUTHORITATIVE)
+   ELIGIBILITY (AUTHORITATIVE - FIXED)
 ========================= */
 async function getWalletState(addr) {
   const [
@@ -157,27 +158,46 @@ async function getWalletState(addr) {
   const pending = Number(ethers.formatEther(pendingRaw));
   const minBalance = Number(ethers.formatUnits(minBalanceRaw, decimals));
 
+  const currentTime = now();
+
+  // CRITICAL FIX: Hold time calculation
+  // The hold requirement applies whenever:
+  // 1. User has minimum balance
+  // 2. User has not held long enough since acquiring balance
   let holdRemaining = 0;
-  if (bal >= minBalance && lastClaimAt === 0n && lastNonZeroAt > 0n) {
-    holdRemaining = Math.max(
-      0,
-      Number(lastNonZeroAt) + Number(minHold) - now()
-    );
+  
+  if (bal >= minBalance && lastNonZeroAt > 0n) {
+    // Calculate time since first acquisition of minimum balance
+    const timeSinceAcquisition = currentTime - Number(lastNonZeroAt);
+    const requiredHoldTime = Number(minHold);
+    
+    // If they haven't held long enough, show remaining time
+    if (timeSinceAcquisition < requiredHoldTime) {
+      holdRemaining = requiredHoldTime - timeSinceAcquisition;
+    }
+  } else if (bal < minBalance) {
+    // If balance is below minimum, they need to acquire more
+    // Show as "Insufficient balance" rather than a timer
+    holdRemaining = -1; // Special value indicating insufficient balance
   }
 
+  // Cooldown calculation (time since last claim)
   let cooldownRemaining = 0;
   if (lastClaimAt > 0n) {
-    cooldownRemaining = Math.max(
-      0,
-      Number(lastClaimAt) + Number(cooldown) - now()
-    );
+    const timeSinceLastClaim = currentTime - Number(lastClaimAt);
+    const requiredCooldown = Number(cooldown);
+    
+    if (timeSinceLastClaim < requiredCooldown) {
+      cooldownRemaining = requiredCooldown - timeSinceLastClaim;
+    }
   }
 
+  // Eligibility determination
   const canClaim =
     pending > 0 &&
     bal >= minBalance &&
-    holdRemaining === 0 &&
-    cooldownRemaining === 0;
+    holdRemaining === 0 &&  // Must have held long enough
+    cooldownRemaining === 0; // Must be past cooldown
 
   return {
     bal,
@@ -185,6 +205,9 @@ async function getWalletState(addr) {
     holdRemaining,
     cooldownRemaining,
     canClaim,
+    minBalance,
+    lastNonZeroAt: Number(lastNonZeroAt),
+    lastClaimAt: Number(lastClaimAt),
   };
 }
 
@@ -192,29 +215,51 @@ async function getWalletState(addr) {
    RENDER CONNECTED
 ========================= */
 async function renderConnected() {
-  if (!connectedAddress) return;
+  if (!connectedAddress) {
+    $("connectedCard").innerHTML = "";
+    return;
+  }
 
   const s = await getWalletState(connectedAddress);
+
+  // Format hold status
+  let holdStatus;
+  if (s.holdRemaining === -1) {
+    holdStatus = "Insufficient balance";
+  } else if (s.holdRemaining > 0) {
+    holdStatus = countdown(s.holdRemaining);
+  } else {
+    holdStatus = "Ready";
+  }
 
   $("connectedCard").innerHTML = `
     <div class="wallet-card">
       <h3>Connected Wallet</h3>
+      <div class="wallet-address">${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}</div>
       <div>MMM Holdings: ${formatMMM(s.bal)}</div>
       <div>Claimable MON: ${formatMON(s.pending)}</div>
-      <div>Hold: ${countdown(s.holdRemaining)}</div>
+      <div>Hold: ${holdStatus}</div>
       <div>Cooldown: ${countdown(s.cooldownRemaining)}</div>
       <button ${s.canClaim ? "" : "disabled"}
         onclick="claimConnected()">
-        Claim
+        ${s.canClaim ? "Claim Rewards" : "Not Eligible"}
       </button>
     </div>
   `;
 }
 
 async function claimConnected() {
-  const tx = await RewardVault.claim();
-  await tx.wait();
-  refreshAll();
+  try {
+    const tx = await RewardVault.claim();
+    showLoading("Claiming rewards...");
+    await tx.wait();
+    hideLoading();
+    refreshAll();
+  } catch (err) {
+    hideLoading();
+    console.error("Claim failed:", err);
+    alert("Claim failed: " + (err.message || err));
+  }
 }
 
 /* =========================
@@ -222,30 +267,85 @@ async function claimConnected() {
 ========================= */
 async function renderWatched() {
   const el = $("walletsContainer");
+  
+  if (wallets.length === 0) {
+    el.innerHTML = '<div class="empty-state">No watched wallets</div>';
+    return;
+  }
+
   el.innerHTML = "";
 
   for (const w of wallets) {
     const s = await getWalletState(w.address);
 
+    // Format hold status
+    let holdStatus;
+    if (s.holdRemaining === -1) {
+      holdStatus = "Insufficient balance";
+    } else if (s.holdRemaining > 0) {
+      holdStatus = countdown(s.holdRemaining);
+    } else {
+      holdStatus = "Ready";
+    }
+
     el.innerHTML += `
       <div class="wallet-card">
-        <h3>${w.name}</h3>
+        <div class="wallet-header">
+          <h3>${w.name || "Unnamed"}</h3>
+          <button onclick="removeWallet('${w.address}')" class="btn-icon">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+        <div class="wallet-address">${w.address.slice(0, 6)}...${w.address.slice(-4)}</div>
         <div>MMM Holdings: ${formatMMM(s.bal)}</div>
         <div>Claimable MON: ${formatMON(s.pending)}</div>
-        <div>Hold: ${countdown(s.holdRemaining)}</div>
+        <div>Hold: ${holdStatus}</div>
         <div>Cooldown: ${countdown(s.cooldownRemaining)}</div>
+        <div class="wallet-status ${s.canClaim ? 'eligible' : 'not-eligible'}">
+          ${s.canClaim ? "✓ Eligible to claim" : "✗ Not eligible"}
+        </div>
       </div>
     `;
   }
 }
 
 /* =========================
+   WALLET MANAGEMENT
+========================= */
+function removeWallet(address) {
+  if (confirm(`Remove ${address} from watched wallets?`)) {
+    wallets = wallets.filter(w => w.address.toLowerCase() !== address.toLowerCase());
+    saveLocal();
+    refreshAll();
+  }
+}
+
+/* =========================
+   LOADING OVERLAY
+========================= */
+function showLoading(text = "Processing...") {
+  const overlay = $("loadingOverlay");
+  const loadingText = $("loadingText");
+  if (overlay) overlay.classList.remove("hidden");
+  if (loadingText) loadingText.textContent = text;
+}
+
+function hideLoading() {
+  const overlay = $("loadingOverlay");
+  if (overlay) overlay.classList.add("hidden");
+}
+
+/* =========================
    REFRESH
 ========================= */
 async function refreshAll() {
-  await renderConnected();
-  await renderWatched();
-  saveLocal();
+  try {
+    await renderConnected();
+    await renderWatched();
+    saveLocal();
+  } catch (err) {
+    console.error("Refresh failed:", err);
+  }
 }
 
 /* =========================
@@ -254,8 +354,22 @@ async function refreshAll() {
 document.addEventListener("DOMContentLoaded", async () => {
   loadLocal();
   await initRead();
+  
   if (window.ethereum) {
     const accts = await window.ethereum.request({ method: "eth_accounts" });
     if (accts.length) await connectWallet();
   }
+  
+  // Set up refresh button if it exists
+  const refreshBtn = $("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", refreshAll);
+  }
+  
+  // Initial render
+  refreshAll();
 });
+
+// Make functions globally available
+window.claimConnected = claimConnected;
+window.removeWallet = removeWallet;
