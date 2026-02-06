@@ -120,6 +120,10 @@ async function initRead() {
    WALLET CONNECT
 ========================= */
 async function connectWallet() {
+  if (!window.ethereum) {
+    throw new Error("No Web3 wallet detected");
+  }
+  
   browserProvider = new ethers.BrowserProvider(window.ethereum);
   await browserProvider.send("eth_requestAccounts", []);
 
@@ -129,7 +133,7 @@ async function connectWallet() {
   MMM = MMM.connect(signer);
   RewardVault = RewardVault.connect(signer);
 
-  refreshAll();
+  await refreshAll();
 }
 
 /* =========================
@@ -349,24 +353,98 @@ async function refreshAll() {
 }
 
 /* =========================
+   DISCONNECT
+========================= */
+function disconnectWallet() {
+  connectedAddress = null;
+  browserProvider = null;
+  signer = null;
+  
+  // Reconnect contracts to read-only provider
+  MMM = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, provider);
+  RewardVault = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, provider);
+  
+  updateConnectButton();
+  refreshAll();
+}
+
+/* =========================
+   UPDATE UI BUTTONS
+========================= */
+function updateConnectButton() {
+  const connectBtn = $("connectBtn");
+  const connectLabel = $("connectLabel");
+  const disconnectBtn = $("disconnectBtn");
+  
+  if (connectedAddress) {
+    if (connectLabel) {
+      connectLabel.textContent = `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`;
+    }
+    if (disconnectBtn) {
+      disconnectBtn.disabled = false;
+    }
+  } else {
+    if (connectLabel) {
+      connectLabel.textContent = "Connect";
+    }
+    if (disconnectBtn) {
+      disconnectBtn.disabled = true;
+    }
+  }
+}
+
+/* =========================
    BOOT
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
   loadLocal();
   await initRead();
   
-  if (window.ethereum) {
-    const accts = await window.ethereum.request({ method: "eth_accounts" });
-    if (accts.length) await connectWallet();
+  // Set up connect button
+  const connectBtn = $("connectBtn");
+  if (connectBtn) {
+    connectBtn.addEventListener("click", async () => {
+      if (!window.ethereum) {
+        alert("Please install MetaMask or another Web3 wallet");
+        return;
+      }
+      try {
+        await connectWallet();
+        updateConnectButton();
+      } catch (err) {
+        console.error("Connection failed:", err);
+        alert("Failed to connect wallet: " + (err.message || err));
+      }
+    });
   }
   
-  // Set up refresh button if it exists
+  // Set up disconnect button
+  const disconnectBtn = $("disconnectBtn");
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener("click", disconnectWallet);
+  }
+  
+  // Set up refresh button
   const refreshBtn = $("refreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", refreshAll);
   }
   
+  // Auto-connect if already authorized
+  if (window.ethereum) {
+    try {
+      const accts = await window.ethereum.request({ method: "eth_accounts" });
+      if (accts.length) {
+        await connectWallet();
+        updateConnectButton();
+      }
+    } catch (err) {
+      console.error("Auto-connect failed:", err);
+    }
+  }
+  
   // Initial render
+  updateConnectButton();
   refreshAll();
 });
 
