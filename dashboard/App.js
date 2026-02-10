@@ -88,6 +88,8 @@ let tokenWrite = null, rewardVaultWrite = null, routerWrite = null;
 
 let EFFECTIVE_WMON = null;
 
+let MMM_DECIMALS = 18;
+
 let wmonRead = null;
 let wmonWrite = null;
 let pairRead = null;
@@ -290,6 +292,7 @@ async function initReadSide() {
   );
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
+  MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
   rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, readProvider);
   routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
 
@@ -441,10 +444,10 @@ async function getWalletEligibility(addr) {
       rewardVaultRead.minBalance(),
     ]);
 
-    const decimals = connectedSnapshot.decimals || 18;
-    const bal = Number(ethers.formatUnits(balRaw, decimals));
+    const bal = Number(ethers.formatUnits(balRaw, MMM_DECIMALS));
+    const minBalance = Number(ethers.formatUnits(minBalanceRaw, MMM_DECIMALS));
+
     const pending = Number(ethers.formatEther(pendingRaw));
-    const minBalance = Number(ethers.formatUnits(minBalanceRaw, decimals));
 
     // FIXED: Always calculate hold time from lastNonZeroAt
     let holdRemaining = 0;
