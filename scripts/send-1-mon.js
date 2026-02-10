@@ -7,7 +7,7 @@ async function main() {
   const provider = ethers.provider;
 
   const sender = new ethers.Wallet(
-    process.env.DEPLOYER_PRIVATE_KEY,
+    process.env.TESTER_PRIVATE_KEY,
     provider
   );
 
