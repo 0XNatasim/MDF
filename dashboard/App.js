@@ -88,6 +88,12 @@ let tokenWrite = null, rewardVaultWrite = null, routerWrite = null;
 
 let EFFECTIVE_WMON = null;
 
+let VAULT_PARAMS = {
+  minHoldTime: null,
+  claimCooldown: null,
+  minBalance: null,
+};
+
 let MMM_DECIMALS = 18;
 
 let wmonRead = null;
@@ -210,6 +216,33 @@ function fmtTiny(x, decimals = 10) {
   if (!Number.isFinite(n) || n <= 0) return "—";
   return n.toFixed(decimals).replace(/\.?0+$/, "");
 }
+
+
+/* =========================
+   new function
+========================= */
+async function loadVaultParams() {
+  if (
+    VAULT_PARAMS.minHoldTime !== null &&
+    VAULT_PARAMS.claimCooldown !== null &&
+    VAULT_PARAMS.minBalance !== null
+  ) {
+    return;
+  }
+
+  const [minHold, cooldown, minBalanceRaw] = await Promise.all([
+    rewardVaultRead.minHoldTimeSec(),
+    rewardVaultRead.claimCooldown(),
+    rewardVaultRead.minBalance(),
+  ]);
+
+  VAULT_PARAMS.minHoldTime = Number(minHold);
+  VAULT_PARAMS.claimCooldown = Number(cooldown);
+  VAULT_PARAMS.minBalance = Number(
+    ethers.formatUnits(minBalanceRaw, MMM_DECIMALS)
+  );
+}
+
 
 /* =========================
    Local storage
@@ -417,39 +450,45 @@ function disconnectWallet() {
   updateSwapQuoteAndButtons();
   logInfo("Wallet disconnected");
 }
-
 /* =========================
-   ELIGIBILITY CALCULATION (FIXED)
-   Uses lastNonZeroAt consistently for both connected and watched wallets
+   ELIGIBILITY CALCULATION (RPC-SAFE, FIXED)
+   - Caches global vault params
+   - Uses lastNonZeroAt correctly
+   - Fail-soft on RPC throttling
 ========================= */
 async function getWalletEligibility(addr) {
-  const now = Math.floor(Date.now() / 1000);
-  
+  const nowTs = Math.floor(Date.now() / 1000);
+
   try {
+    // 1️⃣ Load global vault params ONCE (cached)
+    await loadVaultParams();
+
+    // 2️⃣ Per-wallet calls ONLY (reduced set)
     const [
       balRaw,
       pendingRaw,
       lastClaimAt,
       lastNonZeroAt,
-      minHold,
-      cooldown,
-      minBalanceRaw,
     ] = await Promise.all([
       tokenRead.balanceOf(addr),
       rewardVaultRead.pending(addr),
       rewardVaultRead.lastClaimAt(addr),
       tokenRead.lastNonZeroAt(addr),
-      rewardVaultRead.minHoldTimeSec(),
-      rewardVaultRead.claimCooldown(),
-      rewardVaultRead.minBalance(),
     ]);
 
-    const bal = Number(ethers.formatUnits(balRaw, MMM_DECIMALS));
-    const minBalance = Number(ethers.formatUnits(minBalanceRaw, MMM_DECIMALS));
+    const bal = Number(
+      ethers.formatUnits(balRaw, MMM_DECIMALS)
+    );
 
-    const pending = Number(ethers.formatEther(pendingRaw));
+    const pending = Number(
+      ethers.formatEther(pendingRaw)
+    );
 
-    // FIXED: Always calculate hold time from lastNonZeroAt
+    const minBalance = VAULT_PARAMS.minBalance;
+
+    /* -------------------------
+       HOLD (only before first claim)
+    -------------------------- */
     let holdRemaining = 0;
 
     if (
@@ -457,19 +496,22 @@ async function getWalletEligibility(addr) {
       lastClaimAt === 0n &&
       lastNonZeroAt > 0n
     ) {
-      const holdEnd = Number(lastNonZeroAt) + Number(minHold);
-      holdRemaining = Math.max(0, holdEnd - now);
+      const holdEnd =
+        Number(lastNonZeroAt) + VAULT_PARAMS.minHoldTime;
+
+      holdRemaining = Math.max(0, holdEnd - nowTs);
     }
 
-    // Cooldown calculation
+    /* -------------------------
+       COOLDOWN (after claim)
+    -------------------------- */
     let cooldownRemaining = 0;
+
     if (lastClaimAt > 0n) {
-      const timeSinceLastClaim = now - Number(lastClaimAt);
-      const requiredCooldown = Number(cooldown);
-      
-      if (timeSinceLastClaim < requiredCooldown) {
-        cooldownRemaining = requiredCooldown - timeSinceLastClaim;
-      }
+      const cooldownEnd =
+        Number(lastClaimAt) + VAULT_PARAMS.claimCooldown;
+
+      cooldownRemaining = Math.max(0, cooldownEnd - nowTs);
     }
 
     const canClaim =
@@ -488,18 +530,11 @@ async function getWalletEligibility(addr) {
       lastClaimAt: Number(lastClaimAt),
       lastNonZeroAt: Number(lastNonZeroAt),
     };
+
   } catch (e) {
-    console.error("getWalletEligibility error:", e);
-    return {
-      bal: 0,
-      pending: 0,
-      holdRemaining: 0,
-      cooldownRemaining: 0,
-      canClaim: false,
-      hasMinBalance: false,
-      lastClaimAt: 0,
-      lastNonZeroAt: 0,
-    };
+    // IMPORTANT: fail-soft, do NOT lie with zeros
+    console.warn("[getWalletEligibility skipped]", addr, e.message);
+    return null;
   }
 }
 
@@ -749,6 +784,8 @@ async function renderConnectedCard() {
   }
 
   const eligibility = await getWalletEligibility(connectedAddress);
+  if (!eligibility) return; // or `continue` in a loop
+
 
   const holdText =
     !eligibility.hasMinBalance
@@ -838,6 +875,8 @@ async function renderWallets() {
 
   for (const w of wallets) {
     const eligibility = await getWalletEligibility(w.address);
+    if (!eligibility) continue;
+
 
     const holdText =
       !eligibility.hasMinBalance
