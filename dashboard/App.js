@@ -448,13 +448,14 @@ async function getWalletEligibility(addr) {
 
     // FIXED: Always calculate hold time from lastNonZeroAt
     let holdRemaining = 0;
-    if (bal >= minBalance && lastNonZeroAt > 0n) {
-      const timeSinceAcquisition = now - Number(lastNonZeroAt);
-      const requiredHoldTime = Number(minHold);
-      
-      if (timeSinceAcquisition < requiredHoldTime) {
-        holdRemaining = requiredHoldTime - timeSinceAcquisition;
-      }
+
+    if (
+      bal >= minBalance &&
+      lastClaimAt === 0n &&
+      lastNonZeroAt > 0n
+    ) {
+      const holdEnd = Number(lastNonZeroAt) + Number(minHold);
+      holdRemaining = Math.max(0, holdEnd - now);
     }
 
     // Cooldown calculation
