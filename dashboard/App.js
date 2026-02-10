@@ -87,6 +87,7 @@ let tokenRead, rewardVaultRead, routerRead, factoryRead;
 let tokenWrite = null, rewardVaultWrite = null, routerWrite = null;
 
 let EFFECTIVE_WMON = null;
+let refreshInFlight = false;
 
 let VAULT_PARAMS = {
   minHoldTime: null,
@@ -241,6 +242,19 @@ async function loadVaultParams() {
   VAULT_PARAMS.minBalance = Number(
     ethers.formatUnits(minBalanceRaw, MMM_DECIMALS)
   );
+}
+
+async function refreshAll() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+
+  try {
+    // existing refreshAll body
+  } finally {
+    setTimeout(() => {
+      refreshInFlight = false;
+    }, 1500); // 1.5s cooldown
+  }
 }
 
 
@@ -533,7 +547,10 @@ async function getWalletEligibility(addr) {
 
   } catch (e) {
     // IMPORTANT: fail-soft, do NOT lie with zeros
-    console.warn("[getWalletEligibility skipped]", addr, e.message);
+    if (!String(e.message).includes("Too Many Requests")) {
+      console.warn("[getWalletEligibility skipped]", addr, e.message);
+    }
+    
     return null;
   }
 }
