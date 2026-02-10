@@ -610,8 +610,9 @@ async function updatePoolReservesUI() {
       wmonReserve = r0;
     }
 
-    const decimals = connectedSnapshot.decimals || 18;
-    const mmmHuman = Number(ethers.formatUnits(mmmReserve, decimals));
+    const mmmHuman = Number(
+      ethers.formatUnits(mmmReserve, MMM_DECIMALS)
+    );
     const wmonHuman = Number(ethers.formatEther(wmonReserve));
 
     const mmmPct = ((mmmHuman / (mmmHuman + wmonHuman)) * 100).toFixed(2);
@@ -1066,8 +1067,7 @@ async function updateAvailableBalance() {
 
   try {
     const bal = await tokenRead.balanceOf(addr);
-    const decimals = connectedSnapshot.decimals || 18;
-    const human = Number(ethers.formatUnits(bal, decimals));
+    const human = Number(ethers.formatUnits(bal, MMM_DECIMALS));
     balSpan.textContent = formatMMM(human);
   } catch (e) {
     balSpan.textContent = "0 MMM";
@@ -1187,7 +1187,8 @@ async function updateSwapQuoteAndButtons() {
 
   try {
     if (side === "buy") {
-      const decimals = connectedSnapshot.decimals || 18;
+      const decimals = MMM_DECIMALS;
+
       const ethIn = ethers.parseEther(String(amountIn));
 
       const mmmOut = await quoteOutFromReserves(
@@ -1207,7 +1208,8 @@ async function updateSwapQuoteAndButtons() {
       return;
     }
 
-    const decimals = connectedSnapshot.decimals || 18;
+    const decimals = MMM_DECIMALS;
+
     const mmmIn = ethers.parseUnits(String(amountIn), decimals);
 
     const monOut = await quoteOutFromReserves(
