@@ -212,7 +212,7 @@ async function main() {
   await sleep(1500);
   console.log("✓ TaxVault.setRouter");
 
-  await swapVault.setRouter(ROUTER);
+  await swapVault.setRouterOnce(router.address);
   await sleep(1500);
   await swapVault.setTaxVault(TAX_VAULT);
   await sleep(1500);

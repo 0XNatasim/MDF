@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+
+/*//////////////////////////////////////////////////////////////
+                            BOOST NFT
+//////////////////////////////////////////////////////////////*/
+
+contract BoostNFT is ERC721, Ownable {
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error SoldOut();
+    error TransfersLocked();
+    error ZeroAddress();
+    error BoostConfigFrozen();
+    error BadRarity();
+
+    /*//////////////////////////////////////////////////////////////
+                                TYPES
+    //////////////////////////////////////////////////////////////*/
+    enum Rarity {
+        NONE,
+        COMMON,
+        RARE
+    }
+
+    struct BoostConfig {
+        uint32 holdReduction;      // seconds
+        uint32 cooldownReduction;  // seconds
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+    uint256 public constant MAX_COMMON = 666;
+    uint256 public constant MAX_RARE   = 333;
+
+    /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
+    uint256 public commonMinted;
+    uint256 public rareMinted;
+    uint256 private nextTokenId = 1;
+
+    mapping(uint256 => Rarity) public rarityOf;
+
+    // O(1) per-wallet tracking
+    mapping(address => uint16) public commonCount;
+    mapping(address => uint16) public rareCount;
+    mapping(address => Rarity) public bestBoostOf;
+
+    /*//////////////////////////////////////////////////////////////
+                            TRANSFER GATING
+    //////////////////////////////////////////////////////////////*/
+    bool public transfersEnabled = false;
+
+    /*//////////////////////////////////////////////////////////////
+                            BOOST CONFIG
+    //////////////////////////////////////////////////////////////*/
+    mapping(Rarity => BoostConfig) public boostFor;
+    bool public boostConfigFrozen;
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+    event Minted(address indexed to, uint256 tokenId, Rarity rarity);
+    event TransfersEnabledSet(bool enabled);
+    event BoostConfigUpdated(
+        Rarity indexed rarity,
+        uint32 holdReduction,
+        uint32 cooldownReduction
+    );
+    event BoostConfigFrozen();
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+    constructor(address owner_)
+        ERC721("MMM Boost", "MMMBOOST")
+        Ownable(owner_)
+    {
+        if (owner_ == address(0)) revert ZeroAddress();
+
+        // Conservative defaults (can be tuned pre-freeze)
+        boostFor[Rarity.COMMON] = BoostConfig({
+            holdReduction: 2 days,
+            cooldownReduction: 6 hours
+        });
+
+        boostFor[Rarity.RARE] = BoostConfig({
+            holdReduction: 4 days,
+            cooldownReduction: 12 hours
+        });
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                MINTING
+    //////////////////////////////////////////////////////////////*/
+    function mintCommon(address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (commonMinted >= MAX_COMMON) revert SoldOut();
+
+        _mintBoost(to, Rarity.COMMON);
+        commonMinted++;
+    }
+
+    function mintRare(address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (rareMinted >= MAX_RARE) revert SoldOut();
+
+        _mintBoost(to, Rarity.RARE);
+        rareMinted++;
+    }
+
+    function _mintBoost(address to, Rarity rarity) internal {
+        uint256 tokenId = nextTokenId++;
+        rarityOf[tokenId] = rarity;
+
+        _safeMint(to, tokenId);
+
+        if (rarity == Rarity.COMMON) commonCount[to]++;
+        if (rarity == Rarity.RARE)   rareCount[to]++;
+
+        _recomputeBestBoost(to);
+
+        emit Minted(to, tokenId, rarity);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        TRANSFER CONTROL (ANTI-GAMING)
+    //////////////////////////////////////////////////////////////*/
+    function setTransfersEnabled(bool enabled) external onlyOwner {
+        transfersEnabled = enabled;
+        emit TransfersEnabledSet(enabled);
+    }
+
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal override returns (address) {
+        address from = _ownerOf(tokenId);
+
+        // Lock transfers until explicitly enabled (minting allowed)
+        if (!transfersEnabled && from != address(0)) {
+            revert TransfersLocked();
+        }
+
+        address prev = super._update(to, tokenId, auth);
+
+        Rarity r = rarityOf[tokenId];
+
+        if (from != address(0)) {
+            if (r == Rarity.COMMON) commonCount[from]--;
+            if (r == Rarity.RARE)   rareCount[from]--;
+            _recomputeBestBoost(from);
+        }
+
+        if (to != address(0)) {
+            if (r == Rarity.COMMON) commonCount[to]++;
+            if (r == Rarity.RARE)   rareCount[to]++;
+            _recomputeBestBoost(to);
+        }
+
+        return prev;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INTERNAL LOGIC
+    //////////////////////////////////////////////////////////////*/
+    function _recomputeBestBoost(address user) internal {
+        if (rareCount[user] > 0) {
+            bestBoostOf[user] = Rarity.RARE;
+        } else if (commonCount[user] > 0) {
+            bestBoostOf[user] = Rarity.COMMON;
+        } else {
+            bestBoostOf[user] = Rarity.NONE;
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ADMIN — BOOST CONFIG
+    //////////////////////////////////////////////////////////////*/
+    function setBoostConfig(
+        Rarity rarity,
+        uint32 holdReduction,
+        uint32 cooldownReduction
+    ) external onlyOwner {
+        if (boostConfigFrozen) revert BoostConfigFrozen();
+        if (rarity != Rarity.COMMON && rarity != Rarity.RARE)
+            revert BadRarity();
+
+        boostFor[rarity] = BoostConfig({
+            holdReduction: holdReduction,
+            cooldownReduction: cooldownReduction
+        });
+
+        emit BoostConfigUpdated(
+            rarity,
+            holdReduction,
+            cooldownReduction
+        );
+    }
+
+    function freezeBoostConfig() external onlyOwner {
+        boostConfigFrozen = true;
+        emit BoostConfigFrozen();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REWARDVAULT INTEGRATION
+    //////////////////////////////////////////////////////////////*/
+    function getBoost(address user)
+        external
+        view
+        returns (BoostConfig memory config, uint8 rarity)
+    {
+        Rarity r = bestBoostOf[user];
+        config = boostFor[r];
+        rarity = uint8(r);
+    }
+}

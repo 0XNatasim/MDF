@@ -37,6 +37,7 @@ contract TaxVault is Ownable {
     error AmountZero();
     error RouterMissing();
     error OnlyOwnerOrKeeper();
+    error ProcessingDisabled();
 
     // ─── CONSTANTS ────────────────────────────────────────────
 
@@ -63,6 +64,12 @@ contract TaxVault is Ownable {
 
     address public router;             // Uniswap V2-compatible router
     address public keeper;             // off-chain automation wallet
+
+    // ─── EMERGENCY CONTROL ────────────────────────────────────
+
+    /// @notice Emergency kill-switch for processing functionality.
+    ///         When false, process() will revert.
+    bool public processingEnabled = true;
 
     // ─── SPLIT WEIGHTS (basis-points) ─────────────────────────
     //
@@ -103,6 +110,7 @@ contract TaxVault is Ownable {
     event RouterApproved(address indexed router);
     event KeeperSet(address indexed keeper);
     event PathModeSet(bool directUsdc);
+    event ProcessingEnabledSet(bool enabled);
 
     event Processed(
         uint256 mmmIn,
@@ -172,6 +180,14 @@ contract TaxVault is Ownable {
         emit PathModeSet(v);
     }
 
+    /// @notice Emergency control: enable or disable processing.
+    ///         When disabled, process() will revert.
+    /// @param enabled True to enable processing, false to disable.
+    function setProcessingEnabled(bool enabled) external onlyOwner {
+        processingEnabled = enabled;
+        emit ProcessingEnabledSet(enabled);
+    }
+
     /// @notice Wire all downstream vault addresses (all must be non-zero).
     function wireOnce(
         address rewardVault_,
@@ -215,6 +231,9 @@ contract TaxVault is Ownable {
         uint256 minUsdcOut,
         uint256 deadline
     ) external onlyOwnerOrKeeper {
+
+        // ── emergency control ─────────────────────────────────
+        if (!processingEnabled) revert ProcessingDisabled();
 
         // ── input checks ──────────────────────────────────────
         if (mmmAmount == 0) revert AmountZero();
