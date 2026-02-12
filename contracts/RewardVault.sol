@@ -15,32 +15,23 @@ interface IERC20Like {
 }
 
 interface IMMMToken is IERC20Like {
-    /// @notice Timestamp when user last crossed from zero → non-zero balance
     function lastNonZeroAt(address user) external view returns (uint256);
 }
 
 /*//////////////////////////////////////////////////////////////
-                        BOOST INTERFACES
+                        BOOST NFT INTERFACE
 //////////////////////////////////////////////////////////////*/
 
-/// @notice Optional USDC bonus vault (v2+ only)
-interface IBoostVault {
-    function claimBonus(address user, uint256 baseAmount)
-        external
-        returns (uint256 paidBonus);
-}
-
-/// @notice Minimal, read-only Boost NFT interface
 interface IBoostNFT {
     struct BoostConfig {
-        uint32 holdReduction;      // seconds
-        uint32 cooldownReduction;  // seconds
+        uint32 holdReduction;
+        uint32 cooldownReduction;
     }
 
     function getBoost(address user)
         external
         view
-        returns (BoostConfig memory config, uint8 rarity);
+        returns (BoostConfig memory config, uint8);
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -48,60 +39,32 @@ interface IBoostNFT {
 //////////////////////////////////////////////////////////////*/
 
 contract RewardVault is Ownable, ReentrancyGuard {
+
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
     error NothingToClaim();
     error ExcludedFromRewards(address who);
     error BalanceBelowMin(address who, uint256 bal, uint256 minBal);
-    error HoldTimeNotMet(
-        address who,
-        uint256 lastNonZeroAt,
-        uint256 nowTs,
-        uint256 requiredHold
-    );
-    error ClaimCooldownActive(
-        address who,
-        uint256 lastClaimAt,
-        uint256 nowTs,
-        uint256 requiredCooldown
-    );
+    error HoldTimeNotMet(address who);
+    error ClaimCooldownActive(address who);
     error ZeroAmount();
     error EligibleSupplyZero();
     error ZeroAddress();
-    error BoostVaultAlreadySet();
 
-    /*//////////////////////////////////////////////////////////////
-                            CONSTANTS
-    //////////////////////////////////////////////////////////////*/
     uint256 public constant ACC_SCALE = 1e18;
 
-    /*//////////////////////////////////////////////////////////////
-                            IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
     IMMMToken public immutable mmm;
 
     uint48  public immutable minHoldTimeSec;
     uint48  public immutable claimCooldown;
     uint256 public immutable minBalance;
 
-    /*//////////////////////////////////////////////////////////////
-                        OPTIONAL EXTERNAL MODULES
-    //////////////////////////////////////////////////////////////*/
-    address   public boostVault;         // optional, v2+
-    bool      public boostVaultSetOnce;
-    IBoostNFT public boostNFT;            // optional, v2+
+    IBoostNFT public boostNFT; // optional
 
-    /*//////////////////////////////////////////////////////////////
-                        REWARD EXCLUSION
-    //////////////////////////////////////////////////////////////*/
-    /// @dev Admin-managed, bounded list (≤10 addresses by policy)
     address[] public excludedRewardAddresses;
     mapping(address => bool) public isExcludedReward;
 
-    /*//////////////////////////////////////////////////////////////
-                        ACCOUNTING STATE
-    //////////////////////////////////////////////////////////////*/
     uint256 public totalDistributed;
     uint256 public accRewardPerToken;
 
@@ -111,28 +74,15 @@ contract RewardVault is Ownable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event ExcludedRewardAddressAdded(address indexed a);
-    event ExcludedRewardAddressRemoved(address indexed a);
-    event RewardExclusionSet(address indexed a, bool excluded);
 
-    event BoostVaultSet(address indexed boostVault);
     event BoostNFTSet(address indexed boostNFT);
-
-    event Notified(
-        uint256 amount,
-        uint256 eligibleSupply,
-        uint256 newAccRewardPerToken
-    );
+    event Notified(uint256 amount, uint256 eligibleSupply, uint256 newAccRewardPerToken);
     event Claimed(address indexed user, uint256 amount);
-    event BonusAttempt(
-        address indexed user,
-        uint256 baseAmount,
-        uint256 paidBonus
-    );
 
     /*//////////////////////////////////////////////////////////////
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
+
     constructor(
         address _mmm,
         uint48  _minHoldTimeSec,
@@ -150,19 +100,9 @@ contract RewardVault is Ownable, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            VIEW HELPERS
+                            VIEWS
     //////////////////////////////////////////////////////////////*/
 
-    function excludedRewardAddressesLength()
-        external
-        view
-        returns (uint256)
-    {
-        return excludedRewardAddresses.length;
-    }
-
-    /// @notice Eligible supply used as reward denominator.
-    /// @dev Excluded list must remain small (≤10 addresses).
     function eligibleSupply() public view returns (uint256) {
         uint256 ts = mmm.totalSupply();
         uint256 sumExcluded;
@@ -188,63 +128,18 @@ contract RewardVault is Ownable, ReentrancyGuard {
                             ADMIN
     //////////////////////////////////////////////////////////////*/
 
-    function setBoostVaultOnce(address boostVault_)
-        external
-        onlyOwner
-    {
-        if (boostVaultSetOnce) revert BoostVaultAlreadySet();
-        if (boostVault_ == address(0)) revert ZeroAddress();
-
-        boostVault = boostVault_;
-        boostVaultSetOnce = true;
-
-        emit BoostVaultSet(boostVault_);
-    }
-
-    /// @notice Optional Boost NFT hook (read-only).
-    ///         If unset, behavior is identical to v1.
-    function setBoostNFT(address boostNFT_)
-        external
-        onlyOwner
-    {
+    function setBoostNFT(address boostNFT_) external onlyOwner {
         boostNFT = IBoostNFT(boostNFT_);
         emit BoostNFTSet(boostNFT_);
     }
 
-    function addExcludedRewardAddress(address a)
-        external
-        onlyOwner
-    {
+    function addExcludedRewardAddress(address a) external onlyOwner {
         excludedRewardAddresses.push(a);
-        emit ExcludedRewardAddressAdded(a);
     }
 
-    function removeExcludedRewardAddress(uint256 idx)
-        external
-        onlyOwner
-    {
-        uint256 n = excludedRewardAddresses.length;
-        require(idx < n, "BadIndex");
-
-        address removed = excludedRewardAddresses[idx];
-        excludedRewardAddresses[idx] =
-            excludedRewardAddresses[n - 1];
-        excludedRewardAddresses.pop();
-
-        emit ExcludedRewardAddressRemoved(removed);
-    }
-
-    function setRewardExcluded(address a, bool excluded)
-        external
-        onlyOwner
-    {
+    function setRewardExcluded(address a, bool excluded) external onlyOwner {
         isExcludedReward[a] = excluded;
-        emit RewardExclusionSet(a, excluded);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        DISTRIBUTION (OWNER)
-    //////////////////////////////////////////////////////////////*/
 
     function notifyRewardAmount(uint256 amount)
         external
@@ -263,7 +158,7 @@ contract RewardVault is Ownable, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            CLAIM
+                                CLAIM
     //////////////////////////////////////////////////////////////*/
 
     function claim()
@@ -282,63 +177,58 @@ contract RewardVault is Ownable, ReentrancyGuard {
 
         uint256 nowTs = block.timestamp;
 
-        /*────────── HOLD TIME (FIRST CLAIM ONLY) ──────────*/
+        /* ───────── HOLD TIME (FIRST CLAIM ONLY) ───────── */
+
         if (lastClaimAt[user] == 0) {
+
             uint256 effectiveHold = minHoldTimeSec;
 
             if (address(boostNFT) != address(0)) {
                 try boostNFT.getBoost(user)
-                    returns (IBoostNFT.BoostConfig memory cfg, )
+                    returns (IBoostNFT.BoostConfig memory cfg, uint8)
                 {
-                    effectiveHold =
-                        cfg.holdReduction < effectiveHold
-                            ? effectiveHold - cfg.holdReduction
-                            : 0;
+                    if (cfg.holdReduction >= effectiveHold) {
+                        effectiveHold = 0;
+                    } else {
+                        effectiveHold -= cfg.holdReduction;
+                    }
                 } catch {}
             }
 
             uint256 lnz = mmm.lastNonZeroAt(user);
-            if (nowTs < lnz + effectiveHold) {
-                revert HoldTimeNotMet(
-                    user,
-                    lnz,
-                    nowTs,
-                    effectiveHold
-                );
-            }
+
+            if (nowTs < lnz + effectiveHold)
+                revert HoldTimeNotMet(user);
         }
 
-        /*────────── COOLDOWN (EVERY CLAIM) ──────────*/
+        /* ───────── COOLDOWN ───────── */
+
         uint256 effectiveCooldown = claimCooldown;
 
         if (address(boostNFT) != address(0)) {
             try boostNFT.getBoost(user)
-                returns (IBoostNFT.BoostConfig memory cfg, )
+                returns (IBoostNFT.BoostConfig memory cfg, uint8 )
             {
-                effectiveCooldown =
-                    cfg.cooldownReduction < effectiveCooldown
-                        ? effectiveCooldown - cfg.cooldownReduction
-                        : 0;
+                if (cfg.cooldownReduction >= effectiveCooldown) {
+                    effectiveCooldown = 0;
+                } else {
+                    effectiveCooldown -= cfg.cooldownReduction;
+                }
             } catch {}
         }
 
         uint48 last = lastClaimAt[user];
-        if (last != 0 && nowTs < uint256(last) + effectiveCooldown) {
-            revert ClaimCooldownActive(
-                user,
-                last,
-                nowTs,
-                effectiveCooldown
-            );
-        }
+        if (last != 0 && nowTs < uint256(last) + effectiveCooldown)
+            revert ClaimCooldownActive(user);
 
-        /*────────── PAYOUT ──────────*/
+        /* ───────── PAYOUT ───────── */
+
         claimed = pending(user);
         if (claimed == 0) revert NothingToClaim();
 
-        // Update accounting BEFORE transfer
         rewardDebt[user] =
             (bal * accRewardPerToken) / ACC_SCALE;
+
         lastClaimAt[user] = uint48(nowTs);
 
         require(
@@ -347,27 +237,12 @@ contract RewardVault is Ownable, ReentrancyGuard {
         );
 
         emit Claimed(user, claimed);
-
-        /*────────── OPTIONAL BONUS (FAIL-SAFE) ──────────*/
-        uint256 paidBonus;
-        if (boostVault != address(0)) {
-            try IBoostVault(boostVault)
-                .claimBonus(user, claimed)
-                returns (uint256 b)
-            {
-                paidBonus = b;
-            } catch {}
-        }
-
-        emit BonusAttempt(user, claimed, paidBonus);
     }
 
     /*//////////////////////////////////////////////////////////////
-                        ADMIN SYNC (SAFE)
+                            ADMIN SYNC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Owner-only debt sync to fix edge cases.
-    /// @dev Can zero pending rewards if misused.
     function syncRewardDebt(address user)
         external
         onlyOwner

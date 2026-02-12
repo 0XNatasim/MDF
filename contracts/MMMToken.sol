@@ -5,34 +5,49 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MMMToken is ERC20, Ownable {
-    // ------------------------- Errors -------------------------
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+
     error ZeroAddress();
     error TaxVaultAlreadySet();
-    error InvalidBps();
+    error AlreadyLaunched();
+    error TradingNotEnabled();
 
-    // ------------------------- Config -------------------------
+    /*//////////////////////////////////////////////////////////////
+                                CONFIG
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public constant BPS = 10_000;
+
     address public taxVault;
     bool public taxVaultSetOnce;
 
-    address public pair;   // MMM/WMON pair
-    address public router; // UniswapV2Router02 (stored for wiring/UI; not used internally)
+    address public pair;
+    address public router;
 
-    bool public taxesEnabled;
-    uint16 public buyTaxBps;  // e.g. 500 = 5%
-    uint16 public sellTaxBps; // e.g. 500 = 5%
+    bool public tradingEnabled;
+    bool public launched;
+    uint256 public launchTime;
 
     mapping(address => bool) public isTaxExempt;
-
-    // last timestamp user had non-zero balance
     mapping(address => uint256) public lastNonZeroAt;
 
-    // ------------------------- Events -------------------------
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event Launch(uint256 timestamp);
+    event TradingEnabled();
     event TaxVaultSet(address indexed vault);
     event PairSet(address indexed pair);
     event RouterSet(address indexed router);
-    event TaxesSet(uint16 buyBps, uint16 sellBps);
-    event TaxesEnabledSet(bool enabled);
     event TaxExemptSet(address indexed who, bool exempt);
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(
         string memory name_,
@@ -47,21 +62,24 @@ contract MMMToken is ERC20, Ownable {
 
         _mint(owner_, initialSupply);
 
-        // Owner exempt by default (operational convenience)
         isTaxExempt[owner_] = true;
-        emit TaxExemptSet(owner_, true);
 
-        // Initialize lastNonZeroAt for owner if minted > 0
-        if (initialSupply > 0) lastNonZeroAt[owner_] = block.timestamp;
+        if (initialSupply > 0) {
+            lastNonZeroAt[owner_] = block.timestamp;
+        }
     }
 
-    // ------------------------- Admin wiring -------------------------
+    /*//////////////////////////////////////////////////////////////
+                                ADMIN
+    //////////////////////////////////////////////////////////////*/
 
     function setTaxVaultOnce(address vault) external onlyOwner {
         if (taxVaultSetOnce) revert TaxVaultAlreadySet();
         if (vault == address(0)) revert ZeroAddress();
+
         taxVault = vault;
         taxVaultSetOnce = true;
+
         emit TaxVaultSet(vault);
     }
 
@@ -77,17 +95,16 @@ contract MMMToken is ERC20, Ownable {
         emit RouterSet(router_);
     }
 
-    function setTaxes(uint16 buyBps, uint16 sellBps) external onlyOwner {
-        // hard cap for safety
-        if (buyBps > 2000 || sellBps > 2000) revert InvalidBps();
-        buyTaxBps = buyBps;
-        sellTaxBps = sellBps;
-        emit TaxesSet(buyBps, sellBps);
-    }
+    /// @notice Final launch trigger. Cannot be reversed.
+    function launch() external onlyOwner {
+        if (launched) revert AlreadyLaunched();
 
-    function setTaxesEnabled(bool enabled) external onlyOwner {
-        taxesEnabled = enabled;
-        emit TaxesEnabledSet(enabled);
+        launched = true;
+        tradingEnabled = true;
+        launchTime = block.timestamp;
+
+        emit Launch(launchTime);
+        emit TradingEnabled();
     }
 
     function setTaxExempt(address who, bool exempt) external onlyOwner {
@@ -96,7 +113,9 @@ contract MMMToken is ERC20, Ownable {
         emit TaxExemptSet(who, exempt);
     }
 
-    // ------------------------- Views -------------------------
+    /*//////////////////////////////////////////////////////////////
+                        BUY / SELL DETECTION
+    //////////////////////////////////////////////////////////////*/
 
     function isBuy(address from, address to) public view returns (bool) {
         return from == pair && to != address(0);
@@ -106,23 +125,59 @@ contract MMMToken is ERC20, Ownable {
         return to == pair && from != address(0);
     }
 
-    // ------------------------- lastNonZero bookkeeping -------------------------
+    /*//////////////////////////////////////////////////////////////
+                            TAX DECAY MODEL
+    //////////////////////////////////////////////////////////////*/
+
+    function getBuyTaxBps() public view returns (uint256) {
+        if (!launched) return 0;
+
+        uint256 elapsed = block.timestamp - launchTime;
+
+        if (elapsed < 10 minutes) return 8000;  // 80%
+        if (elapsed < 20 minutes) return 5000;  // 50%
+        if (elapsed < 40 minutes) return 3000;  // 30%
+        if (elapsed < 60 minutes) return 1000;  // 10%
+        return 500;                              // 5% final
+    }
+
+    function getSellTaxBps() public view returns (uint256) {
+        if (!launched) return 0;
+
+        uint256 elapsed = block.timestamp - launchTime;
+
+        if (elapsed < 20 minutes) return 8000;  // 80%
+        if (elapsed < 40 minutes) return 6000;  // 60%
+        if (elapsed < 60 minutes) return 4000;  // 40%
+        if (elapsed < 90 minutes) return 2000;  // 20%
+        return 500;                              // 5% final
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        LAST NON ZERO TRACKING
+    //////////////////////////////////////////////////////////////*/
 
     function _syncLastNonZero(address a) internal {
         if (a == address(0)) return;
 
         uint256 bal = balanceOf(a);
+
         if (bal == 0) {
             lastNonZeroAt[a] = 0;
         } else {
-            if (lastNonZeroAt[a] == 0) lastNonZeroAt[a] = block.timestamp;
+            if (lastNonZeroAt[a] == 0) {
+                lastNonZeroAt[a] = block.timestamp;
+            }
         }
     }
 
-    // ------------------------- OZ v5 hook -------------------------
-    // In OZ v5, customize transfers by overriding _update (NOT _transfer).
+    /*//////////////////////////////////////////////////////////////
+                        OZ v5 TRANSFER HOOK
+    //////////////////////////////////////////////////////////////*/
+
     function _update(address from, address to, uint256 amount) internal override {
-        // Mint / burn => no tax
+
+        // Mint / burn
         if (from == address(0) || to == address(0)) {
             super._update(from, to, amount);
             _syncLastNonZero(from);
@@ -130,12 +185,19 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
+        // Trading lock before launch
+        if (!tradingEnabled) {
+            if (!isTaxExempt[from] && !isTaxExempt[to]) {
+                revert TradingNotEnabled();
+            }
+        }
+
         bool takeTax =
-            taxesEnabled &&
+            launched &&
             taxVault != address(0) &&
+            pair != address(0) &&
             !isTaxExempt[from] &&
-            !isTaxExempt[to] &&
-            pair != address(0);
+            !isTaxExempt[to];
 
         if (!takeTax) {
             super._update(from, to, amount);
@@ -145,8 +207,12 @@ contract MMMToken is ERC20, Ownable {
         }
 
         uint256 taxBps = 0;
-        if (isBuy(from, to)) taxBps = buyTaxBps;
-        else if (isSell(from, to)) taxBps = sellTaxBps;
+
+        if (isBuy(from, to)) {
+            taxBps = getBuyTaxBps();
+        } else if (isSell(from, to)) {
+            taxBps = getSellTaxBps();
+        }
 
         if (taxBps == 0) {
             super._update(from, to, amount);
@@ -155,10 +221,13 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        uint256 tax = (amount * taxBps) / 10_000;
+        uint256 tax = (amount * taxBps) / BPS;
         uint256 net = amount - tax;
 
-        if (tax > 0) super._update(from, taxVault, tax);
+        if (tax > 0) {
+            super._update(from, taxVault, tax);
+        }
+
         super._update(from, to, net);
 
         _syncLastNonZero(from);

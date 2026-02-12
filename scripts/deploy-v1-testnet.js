@@ -4,10 +4,7 @@ const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 
-// ------------------------------------------------------------
-// RPC throttle helper (Monad testnet protection)
-// ------------------------------------------------------------
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -18,9 +15,10 @@ async function main() {
   console.log("ChainId :", net.chainId.toString());
   console.log("");
 
-  /* -----------------------------------------------------------
-     1. Mock WMON
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 1. Deploy Mock WMON
+  // --------------------------------------------------
+
   const MockERC20 = await ethers.getContractFactory("MockERC20");
 
   const wmon = await MockERC20.deploy(
@@ -30,17 +28,15 @@ async function main() {
     deployer.address
   );
   await wmon.waitForDeployment();
-  await sleep(1500);
-
   const WMON = await wmon.getAddress();
   await wmon.mint(deployer.address, ethers.parseUnits("1000000", 18));
-  await sleep(1500);
-
   console.log("WMON deployed:", WMON);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     2. Mock USDC
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 2. Deploy Mock USDC
+  // --------------------------------------------------
+
   const usdc = await MockERC20.deploy(
     "USD Coin",
     "USDC",
@@ -48,19 +44,15 @@ async function main() {
     deployer.address
   );
   await usdc.waitForDeployment();
-  await sleep(1500);
-
   const USDC = await usdc.getAddress();
   await usdc.mint(deployer.address, ethers.parseUnits("1000000", 6));
-  await sleep(1500);
-
   console.log("USDC deployed:", USDC);
+  await sleep(1000);
 
+  // --------------------------------------------------
+  // 3. Deploy MMMToken
+  // --------------------------------------------------
 
-
-  /* -----------------------------------------------------------
-     3. MMMToken
-  ------------------------------------------------------------ */
   const MMM_SUPPLY = ethers.parseUnits("1000000000", 18);
 
   const MMMToken = await ethers.getContractFactory("MMMToken");
@@ -71,40 +63,40 @@ async function main() {
     deployer.address
   );
   await mmm.waitForDeployment();
-  await sleep(1500);
-
   const MMM = await mmm.getAddress();
   console.log("MMMToken deployed:", MMM);
+  await sleep(1000);
 
+  // --------------------------------------------------
+  // 4. Deploy MockRouter
+  // --------------------------------------------------
 
-  /* -----------------------------------------------------------
-     4. Mock Router
-  ------------------------------------------------------------ */
   const MockRouter = await ethers.getContractFactory("MockRouter");
   const router = await MockRouter.deploy(MMM, WMON, USDC);
   await router.waitForDeployment();
-  await sleep(1500);
-
   const ROUTER = await router.getAddress();
   console.log("MockRouter deployed:", ROUTER);
+  await sleep(1000);
 
-    /* -----------------------------------------------------------
-     2.5 TRANSFER TOKEN OWNERSHIP TO ROUTER (CRITICAL)
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // Transfer ownership to router
+  // --------------------------------------------------
+
   console.log("\n=== TRANSFERRING TOKEN OWNERSHIP TO ROUTER ===");
-  let tx;
-  tx = await usdc.transferOwnership(ROUTER);
-  await tx.wait();
+
+  await (await usdc.transferOwnership(ROUTER)).wait();
   console.log("✓ USDC ownership → Router");
-  tx = await wmon.transferOwnership(ROUTER);
-  await tx.wait();
+
+  await (await wmon.transferOwnership(ROUTER)).wait();
   console.log("✓ WMON ownership → Router");
+
   console.log("=== OWNERSHIP TRANSFER COMPLETE ===\n");
+  await sleep(1000);
 
+  // --------------------------------------------------
+  // 5. Deploy TaxVault
+  // --------------------------------------------------
 
-  /* -----------------------------------------------------------
-     5. TaxVault
-  ------------------------------------------------------------ */
   const TaxVault = await ethers.getContractFactory("TaxVault");
   const taxVault = await TaxVault.deploy(
     MMM,
@@ -113,45 +105,36 @@ async function main() {
     deployer.address
   );
   await taxVault.waitForDeployment();
-  await sleep(1500);
-
   const TAX_VAULT = await taxVault.getAddress();
   console.log("TaxVault deployed:", TAX_VAULT);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     6. RewardVault
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 6. Deploy RewardVault
+  // --------------------------------------------------
+
   const RewardVault = await ethers.getContractFactory("RewardVault");
+
+  const MIN_BALANCE = ethers.parseUnits("1", 18);
+  const MIN_HOLD = 604800; // 7 days
+  const COOLDOWN = 86400;  // 24h
+
   const rewardVault = await RewardVault.deploy(
     MMM,
-    43200,
-    43200,
-    ethers.parseUnits("1", 18),
+    MIN_HOLD,
+    COOLDOWN,
+    MIN_BALANCE,
     deployer.address
   );
   await rewardVault.waitForDeployment();
-  await sleep(1500);
-
   const REWARD_VAULT = await rewardVault.getAddress();
   console.log("RewardVault deployed:", REWARD_VAULT);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     7. BoostVault (USDC)
-  ------------------------------------------------------------ */
-  const BoostVault = await ethers.getContractFactory("BoostVault");
-  const boostVault = await BoostVault.deploy(
-    USDC,
-    deployer.address
-  );
-  await boostVault.waitForDeployment();
-  await sleep(1500);
+  // --------------------------------------------------
+  // 7. Deploy SwapVault
+  // --------------------------------------------------
 
-  const BOOST_VAULT = await boostVault.getAddress();
-  console.log("BoostVault deployed:", BOOST_VAULT);
-
-  /* -----------------------------------------------------------
-     8. SwapVault (MMM / WMON)
-  ------------------------------------------------------------ */
   const SwapVault = await ethers.getContractFactory("SwapVault");
   const swapVault = await SwapVault.deploy(
     MMM,
@@ -159,78 +142,72 @@ async function main() {
     deployer.address
   );
   await swapVault.waitForDeployment();
-  await sleep(1500);
-
   const SWAP_VAULT = await swapVault.getAddress();
   console.log("SwapVault deployed:", SWAP_VAULT);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     9. MarketingVault (2-of-3 multisig)
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 8. Deploy MarketingVault
+  // --------------------------------------------------
+
   if (!process.env.DOPTESTNET || !process.env.TESTER || !process.env.CLAIMER) {
     throw new Error("Missing multisig env vars");
   }
 
   const MarketingVault = await ethers.getContractFactory("MarketingVault");
+
   const marketingVault = await MarketingVault.deploy(
     USDC,
     [
       process.env.DOPTESTNET,
       process.env.TESTER,
-      process.env.CLAIMER,
+      process.env.CLAIMER
     ]
   );
   await marketingVault.waitForDeployment();
-  await sleep(1500);
-
   const MARKETING_VAULT = await marketingVault.getAddress();
   console.log("MarketingVault deployed:", MARKETING_VAULT);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     10. TeamVestingVault (already deployed)
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 9. Team Vesting (existing)
+  // --------------------------------------------------
+
   const TEAM_VAULT = process.env.TESTNET_TEAM_VESTING_MULTISIG;
   if (!TEAM_VAULT) throw new Error("Missing TESTNET_TEAM_VESTING_MULTISIG");
   console.log("Using existing TeamVestingVault:", TEAM_VAULT);
+  await sleep(1000);
 
-  /* -----------------------------------------------------------
-     11. WIRING (CORRECT WAY)
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 10. WIRING
+  // --------------------------------------------------
+
   console.log("\n=== WIRING CONTRACTS ===");
 
-  await taxVault.wireOnce(
+  await (await taxVault.wireOnce(
     REWARD_VAULT,
-    BOOST_VAULT,
     SWAP_VAULT,
     MARKETING_VAULT,
     TEAM_VAULT
-  );
-  await sleep(1500);
+  )).wait();
   console.log("✓ TaxVault.wireOnce");
 
-  await taxVault.setRouter(ROUTER);
-  await sleep(1500);
+  await (await taxVault.setRouter(ROUTER)).wait();
   console.log("✓ TaxVault.setRouter");
 
-  await swapVault.setRouterOnce(router.address);
-  await sleep(1500);
-  await swapVault.setTaxVault(TAX_VAULT);
-  await sleep(1500);
+  await (await swapVault.setRouterOnce(ROUTER)).wait();
+  await (await swapVault.setTaxVaultOnce(TAX_VAULT)).wait();
   console.log("✓ SwapVault wired");
 
-  await boostVault.setRewardVaultOnce(REWARD_VAULT);
-  await sleep(1500);
-  console.log("✓ BoostVault.setRewardVaultOnce");
-
-  await mmm.setTaxVaultOnce(TAX_VAULT);
-  await sleep(1500);
+  await (await mmm.setTaxVaultOnce(TAX_VAULT)).wait();
   console.log("✓ MMMToken.setTaxVaultOnce");
 
   console.log("\n=== WIRING COMPLETE ===");
 
-  /* -----------------------------------------------------------
-     12. Manifest
-  ------------------------------------------------------------ */
+  // --------------------------------------------------
+  // 11. Manifest
+  // --------------------------------------------------
+
   const manifest = {
     network: hre.network.name,
     chainId: Number(net.chainId),
@@ -242,17 +219,15 @@ async function main() {
       ROUTER,
       TAX_VAULT,
       REWARD_VAULT,
-      BOOST_VAULT,
       SWAP_VAULT,
       MARKETING_VAULT,
-      TEAM_VAULT,
+      TEAM_VAULT
     },
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toISOString()
   };
 
   const outDir = path.join("deployments", hre.network.name);
   fs.mkdirSync(outDir, { recursive: true });
-
   const outPath = path.join(outDir, "latest.json");
   fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2));
 

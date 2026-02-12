@@ -1,0 +1,95 @@
+const hre = require("hardhat");
+const { ethers } = hre;
+
+const TX_HASHES = [
+
+  // ===== 2 days ago batch =====
+  "0x2709696f665d21f3c212fc17621179063a31ee37f6eaefed32e3747d89040c0f",
+  "0x13bd60cb1a514efa93ef67202f7a3e19e966258ad39d4b0d6f86c51366174921",
+  "0x0d8c82198912fc6527edd3539ba83c69f5ea349199273faa23eb2c3eaa6ba457",
+  "0x52eda25c39ec1a57e56abe95885cf7bdc9a2b23b324a2bb826627c6b070c0fb3",
+  "0x3fe00a6bce64610df2b599f4051a3af86b1899a9c9e488c58a9fc227ed3ac158",
+  "0x61b48ed4a9e5af83f606cfe011d4898bab3441215ccd9d522dc099f8981e5624",
+  "0x900232164207dc1c878beeb72fb06525937727d6f4d4d71c46a1f384b88979f6",
+  "0xf089babd232e31c6c2168d6f1a5a9fec1d938a3636140aa5db00cfb38deb2594",
+  "0x633a60bb793705912098797e7957ac84a782e166676d04dc364054840df68daf",
+
+  // ===== 9 days ago batch (11800xxx / 10312xxx etc) =====
+  "0x30eb5c431a4442ee3d8ab9ac5e75f62e9a41506bab27715881c52abef27546ee",
+  "0x2015d9ba2ef070c6b6f19763a97d428690631235d1cbcf46275f50bb56246169",
+  "0xd57524043dd68729ea302162e5da608a24a50db4862782231f57da8f0296826f",
+  "0x3e3cde1c12a18b4d8c8f676022b7e2fdd20aeb12ddf77a96648b4daa3c09f3fa",
+  "0xc5988d7ff3dccf19c6fa028c358d57ebb5d1f4498917d4caecdcf88f8d2fff55",
+  "0xddf056cfac91b93ed23fd3dba83b470de07316b499064626082ac6424a0ed42c",
+  "0xd747c676a3f01ca45da2546b76e2e473ed33a0ac049657e494a7e4189161450f",
+  "0x511946dde732da2e3fc81d313bea2a54a5ff21d9d7fe557fe459db457fff37b4",
+  "0x6df12268cc7e905ab15e7d425d7ec786c8026072cb2dee8e050004dd87ce496a",
+  "0x8928bf6cdb32dab10995083a7feab0cae41c398e6c06dc2e62662cebaa9df56a",
+  "0x5788c85c949642833b35d2730d77de2ff8ea9404c4972a0aefe27ef6ef473fa1",
+  "0x377c7bfb91179b4c0fa147808189316c19136139b0d70eb830c15c90f6bed61c",
+  "0xcf254eb9fd47b6c7152e47d04d9a55237ee5e07ee3cdaa13cacf636c3a0b6d82",
+  "0x5eac63c8b756f086e54b4646fa5628ff8fbf1d5556992595e59769a5f9cb3f73",
+  "0x48a62a007808ecec23e2dd17587b7cf73e00801bf22154f67b024e57dbf1e7d2",
+  "0xb8a48903e98bd30744cd3e71d901f4cfccd4b8ba5e76300e0ea3874f32e0d7b5",
+  "0xa3ce38fd34c80585f28b21692bf7e189112c2e5f9bd895c4a6fae8d7640f88be",
+  "0xe3bc11785dec07d024ab9a2e87f1538370f31bb13a69650fbf7527fd0d33b27e",
+  "0xe8e2d80b9a2773e59baa9768b83e8b4673ec9e39c0dfaddc67f9b04b82294f70",
+  "0xed249458e6a371a267be49224e34b19c044188da24a8f05cc0bc5ec5852125d7",
+  "0x9f4072897583b747cffabb96739f716711f09b6a5fdf87087336926a18a6cb83",
+  "0x5907d1afe13eaec5303f9f242da0252ab954e0d49e96ccbb42944086dbeff3bb",
+  "0x9359e715c3bf341debd6f5410323cb90fb6a92078a6b00f4842c479a06e86855",
+  "0x9cd3093e0806454096e633a9ca0d6f076112611f451ec071ed9aa90cce603178",
+  "0x3401994335008d39a9d656d81698099ef717f4b309033f7ee22c6feb8d0c214a",
+  "0xaccacbf6b412fefd6813aa3ffb7fa0f4fad3ddcb6a0e4b284f87a70f75dc2fec",
+  "0x8ea234664dfb7bd3339a8b6c9b8923d9f16f25d4ff5e28f96cadbc1836c0a7b8",
+  "0x5eda60cdde33417708fbcdc7f790111fbfa4c81503085afeb9bb58fea4449481",
+  "0x56c031c2950155a6c5fc5bcb92cd6abf27faf3ad44862dbd837673a357c8c43e",
+  "0xa6f8826544a8b1d855f4aedc1d51a601e5138ef813e6aa79cabcd43066b0dbd1",
+  "0xd9223c568a7fd1eb9f890f8db8252ccff528957205729d74db8eb64bbfa2e50c",
+  "0xea4a1adfbc06e281826423ba42da73e785e70b0d8dca69c33a75c93d7b30d9b2",
+  "0x0102a8b83dbee9ac5a64bbb56bd5985eeb0ac09a3ed2d6c024ebe2c12924bdb0",
+  "0x9ab17e04a2328d33bae5536b3c0223c406729ef539a26168a4c66bae27f072fb",
+  "0xc86b47c3fd08e4f05b49e05b72f5fc86354e0ec5e01531324dc5a5c37a55dee6",
+  "0x1ba06d2b1a0977232ea7eb0f5a4806bf85b8d1a6bdef07a862a07002f6fb7ca2",
+  "0x03bb4b1381ec52d343e8c34a8ed9abc193d5db7aade0160fd67023720ca458ef",
+  "0x4632ee008ca6b783b4719e41c1a3fd70e03b1d861b620bfb1a1f69e23ad86625",
+  "0x435e7a1787c087d19c514bd1e41ceea2107a1501a4c1db5d80adcef925fadab7",
+  "0x9eee329437e8cbac8435a60cb6ea469f1963257c8f13b8e076a54fb3956b86ca",
+  "0x7b477e319e8854a51fe0a2ed6c40a4b7fd46c7b58e07ff4e2aae99ddea62a9a1",
+  "0xb10b766346081da688241e7d42fea2c252ddfe3be7e8bac88dcc5fdea539219b",
+  "0x2f121b2381864f8b6f19dcad758aac4a27ae7c26e926bf7ca33f4683e01d6141",
+  "0x467f0db3025c1d8ceb950c25bac9a440f50aa9130372f130a3631a5dfcd0e5b7",
+  "0x9c5268f736556f96a39c35dec930fd338606b938f0d351513596d730906e58af"
+];
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function main() {
+  const provider = new ethers.JsonRpcProvider(hre.network.config.url);
+  let totalMon = 0n;
+
+  for (const hash of TX_HASHES) {
+
+    const receipt = await provider.getTransactionReceipt(hash);
+    await sleep(70);
+
+    if (!receipt || !receipt.contractAddress) continue;
+
+    const addr = receipt.contractAddress;
+    const bal = await provider.getBalance(addr);
+    await sleep(70);
+
+    if (bal > 0n) {
+      console.log("=================================");
+      console.log("Contract:", addr);
+      console.log("MON:", ethers.formatEther(bal));
+      console.log("=================================\n");
+
+      totalMon += bal;
+    }
+  }
+
+  console.log("TOTAL MON FOUND:", ethers.formatEther(totalMon));
+}
+
+main().catch(console.error);

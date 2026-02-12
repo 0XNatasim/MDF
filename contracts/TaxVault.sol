@@ -55,7 +55,6 @@ contract TaxVault is Ownable {
     // ─── WIRING (set once by owner) ───────────────────────────
 
     address public rewardVault;
-    address public boostVault;
     address public swapVault;          // reserved for future use
     address public marketingVault;
     address public teamVestingVault;
@@ -79,13 +78,11 @@ contract TaxVault is Ownable {
     //   Remainder 50 % → swapped to USDC, then split below
     //
     // USDC-denominated (relative weights applied to usdcOut)
-    //   Boost  2500 / 3500  ≈ 71.4 %
-    //   Mkt     700 / 3500  ≈ 20.0 %
-    //   Team    300 / 3500  ≈  8.6 %  ← receives dust remainder
+    //   Mkt     700 / 1000  = 70.0 %
+    //   Team    300 / 1000  = 30.0 %  ← receives dust remainder
     //
 
     uint16 public bpsReward = 4000;
-    uint16 public bpsBoost  = 2500;
     uint16 public bpsBurn   = 1000;
     uint16 public bpsMkt    =  700;
     uint16 public bpsTeam   =  300;
@@ -100,7 +97,6 @@ contract TaxVault is Ownable {
 
     event Wired(
         address indexed rewardVault,
-        address indexed boostVault,
         address         swapVault,
         address indexed marketingVault,
         address         teamVestingVault
@@ -118,7 +114,6 @@ contract TaxVault is Ownable {
         uint256 mmmToBurn,
         uint256 mmmSwappedForUsdc,
         uint256 usdcOut,
-        uint256 usdcToBoost,
         uint256 usdcToMkt,
         uint256 usdcToTeam
     );
@@ -191,28 +186,24 @@ contract TaxVault is Ownable {
     /// @notice Wire all downstream vault addresses (all must be non-zero).
     function wireOnce(
         address rewardVault_,
-        address boostVault_,
         address swapVault_,
         address marketingVault_,
         address teamVestingVault_
     ) external onlyOwner {
         if (
             rewardVault_      == address(0) ||
-            boostVault_       == address(0) ||
             swapVault_        == address(0) ||
             marketingVault_   == address(0) ||
             teamVestingVault_ == address(0)
         ) revert ZeroAddress();
 
         rewardVault      = rewardVault_;
-        boostVault       = boostVault_;
         swapVault        = swapVault_;
         marketingVault   = marketingVault_;
         teamVestingVault = teamVestingVault_;
 
         emit Wired(
             rewardVault_,
-            boostVault_,
             swapVault_,
             marketingVault_,
             teamVestingVault_
@@ -240,7 +231,6 @@ contract TaxVault is Ownable {
 
         if (
             rewardVault      == address(0) ||
-            boostVault       == address(0) ||
             swapVault        == address(0) ||
             marketingVault   == address(0) ||
             teamVestingVault == address(0)
@@ -293,13 +283,11 @@ contract TaxVault is Ownable {
 
         // ── 3. USDC splits (relative weights) ─────────────────
         //   Team receives the dust remainder to avoid rounding loss.
-        uint256 denom   = uint256(bpsBoost) + uint256(bpsMkt) + uint256(bpsTeam);
+        uint256 denom   =  uint256(bpsMkt) + uint256(bpsTeam);
 
-        uint256 toBoost = denom == 0 ? 0 : (usdcOut * bpsBoost) / denom;
         uint256 toMkt   = denom == 0 ? 0 : (usdcOut * bpsMkt)   / denom;
-        uint256 toTeam  = usdcOut - toBoost - toMkt;
+        uint256 toTeam  = usdcOut - toMkt;
 
-        if (toBoost > 0) usdc.safeTransfer(boostVault,       toBoost);
         if (toMkt   > 0) usdc.safeTransfer(marketingVault,   toMkt);
         if (toTeam  > 0) usdc.safeTransfer(teamVestingVault, toTeam);
 
@@ -310,7 +298,6 @@ contract TaxVault is Ownable {
             toBurn,
             toSwap,
             usdcOut,
-            toBoost,
             toMkt,
             toTeam
         );
