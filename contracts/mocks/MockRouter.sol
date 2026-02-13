@@ -61,57 +61,76 @@ contract MockRouter {
 //////////////////////////////////////////////////////////////*/
     function swapExactTokensForTokens(
         uint256 amountIn,
-        uint256, // amountOutMin (ignored in mock)
+        uint256,
         address[] calldata path,
         address to,
-        uint256 // deadline (ignored in mock)
+        uint256
     ) external returns (uint[] memory amounts) {
+
         require(amountIn > 0, "AMOUNT_ZERO");
         require(path.length >= 2, "BAD_PATH");
         require(to != address(0), "BAD_TO");
 
-        address tokenIn  = path[0];
-        address tokenOut = path[path.length - 1];
-
-        // Pull input token from caller (TaxVault)
-        IERC20(tokenIn).safeTransferFrom(
-           msg.sender,
-           address(this),
-           amountIn
+        // Pull initial token
+        IERC20(path[0]).safeTransferFrom(
+            msg.sender,
+            address(this),
+            amountIn
         );
-
-        uint256 amountOut;
-
-       // ---------------------------------------------------------
-        // Supported mock routes
-        // ---------------------------------------------------------
-
-        if (tokenIn == MMM && tokenOut == WMON) {
-            // 1:1 MMM -> WMON (18 -> 18)
-            amountOut = amountIn;
-            IMintableERC20(WMON).mint(to, amountOut);
-        }
-        else if (tokenIn == WMON && tokenOut == MMM) {
-            amountOut = amountIn;
-            IMintableERC20(MMM).mint(to, amountOut);
-        }
-        else if (tokenIn == MMM && tokenOut == USDC) {
-            // MMM (18) -> USDC (6)
-            amountOut = amountIn / 1e12;
-            IMintableERC20(USDC).mint(to, amountOut);
-        }
-        else {
-            revert("PAIR_NOT_SUPPORTED");
-        }
-
-        // ---------------------------------------------------------
-        // Uniswap-style return array (THIS FIXES THE REVERT)
-        // ---------------------------------------------------------
 
         amounts = new uint[](path.length);
         amounts[0] = amountIn;
-        amounts[path.length - 1] = amountOut;
-    }
+
+        uint256 currentAmount = amountIn;
+
+        for (uint256 i = 0; i < path.length - 1; i++) {
+
+            address tokenIn  = path[i];
+            address tokenOut = path[i + 1];
+
+            uint256 amountOut;
+
+            // -------------------------------
+            // Supported mock pairs
+            // -------------------------------
+
+            if (tokenIn == MMM && tokenOut == WMON) {
+                amountOut = currentAmount; // 1:1
+                IMintableERC20(WMON).mint(address(this), amountOut);
+            }
+            else if (tokenIn == WMON && tokenOut == USDC) {
+                // 18 → 6 decimals
+                amountOut = currentAmount / 1e12;
+                IMintableERC20(USDC).mint(address(this), amountOut);
+            }
+            else if (tokenIn == MMM && tokenOut == USDC) {
+                // direct fallback
+                amountOut = currentAmount / 1e12;
+                IMintableERC20(USDC).mint(address(this), amountOut);
+            }
+            else {
+                revert("PAIR_NOT_SUPPORTED");
+            }
+
+            currentAmount = amountOut;
+            amounts[i + 1] = amountOut;
+        }
+
+    // Send final token to recipient
+    IERC20(path[path.length - 1]).safeTransfer(to, currentAmount);
+
+    emit MockSwap(
+        msg.sender,
+        path[0],
+        path[path.length - 1],
+        amountIn,
+        currentAmount,
+        to
+    );
+
+    return amounts;
+}
+
 
     /*//////////////////////////////////////////////////////////////
         ADD LIQUIDITY — noop but ABI-compatible

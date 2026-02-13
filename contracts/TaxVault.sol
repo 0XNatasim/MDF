@@ -16,7 +16,7 @@ interface IUniswapV2Router02 {
         address[] calldata path,
         address to,
         uint256 deadline
-    ) external returns (uint256 amountOut);
+    ) external returns (uint[] memory amounts);
 }
 
 /*//////////////////////////////////////////////////////////////
