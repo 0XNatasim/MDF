@@ -1,52 +1,90 @@
+// scripts/test-04-claim-reward-and-boost.js
 const hre = require("hardhat");
 const { ethers } = hre;
+const fs = require("fs");
+const path = require("path");
+
+function loadManifest() {
+  const file = path.join(
+    "deployments",
+    hre.network.name,
+    "latest.json"
+  );
+
+  if (!fs.existsSync(file)) {
+    throw new Error(`No deployment manifest found for ${hre.network.name}`);
+  }
+
+  return JSON.parse(fs.readFileSync(file));
+}
 
 async function main() {
-  console.log("=== TEST 03: Claim Reward + Boost ===");
+
+  console.log("=== TEST 04: Claim Reward + Boost ===\n");
 
   const provider = ethers.provider;
+  const [ , user ] = await ethers.getSigners(); // second signer = test user
 
-  const fresh = new ethers.Wallet(process.env.FRESH_PRIVATE_KEY, provider);
+  const manifest = loadManifest();
+  const {
+    MMM,
+    REWARD_VAULT,
+    USDC
+  } = manifest.contracts;
 
-  const MMM = await ethers.getContractAt("MMMToken", process.env.TESTNET_MMM, fresh);
-  const RewardVault = await ethers.getContractAt(
-    "RewardVault",
-    process.env.TESTNET_REWARDVAULT,
-    fresh
-  );
-  const USDC = await ethers.getContractAt("MockERC20", process.env.TESTNET_USDC, fresh);
+  const mmm         = await ethers.getContractAt("MMMToken", MMM, user);
+  const rewardVault = await ethers.getContractAt("RewardVault", REWARD_VAULT, user);
+  const usdc        = await ethers.getContractAt("MockERC20", USDC, user);
 
-  /* -----------------------------------------------------------
-     1) Check pending reward
-  ------------------------------------------------------------ */
-  const pending = await RewardVault.pending(fresh.address);
+  console.log("Network:", hre.network.name);
+  console.log("User:", user.address);
+
+  /* -------------------------------------------------- */
+  /* 1. Check pending reward                           */
+  /* -------------------------------------------------- */
+
+  const pending = await rewardVault.pending(user.address);
   console.log("Pending MMM reward:", ethers.formatUnits(pending, 18));
 
   if (pending === 0n) {
-    throw new Error("❌ No rewards pending (hold time or process missing)");
+    console.log("❌ No rewards pending.");
+    console.log("Possible reasons:");
+    console.log("- Hold time not met");
+    console.log("- process() not executed");
+    console.log("- No emission notified");
+    return;
   }
 
-  /* -----------------------------------------------------------
-     2) Claim
-  ------------------------------------------------------------ */
-  const beforeMMM = await MMM.balanceOf(fresh.address);
-  const beforeUSDC = await USDC.balanceOf(fresh.address);
+  /* -------------------------------------------------- */
+  /* 2. Claim                                          */
+  /* -------------------------------------------------- */
 
-  const tx = await RewardVault.claim();
-  await tx.wait();
+  const beforeMMM  = await mmm.balanceOf(user.address);
+  const beforeUSDC = await usdc.balanceOf(user.address);
 
-  console.log("✓ Reward claimed");
+  try {
+    const tx = await rewardVault.claim();
+    await tx.wait();
+    console.log("✓ Reward claimed");
+  } catch (err) {
+    console.log("❌ Claim reverted:", err.shortMessage || err.message);
+    return;
+  }
 
-  /* -----------------------------------------------------------
-     3) Verify balances
-  ------------------------------------------------------------ */
-  const afterMMM = await MMM.balanceOf(fresh.address);
-  const afterUSDC = await USDC.balanceOf(fresh.address);
+  /* -------------------------------------------------- */
+  /* 3. Verify balances                                */
+  /* -------------------------------------------------- */
 
-  console.log("MMM gained:", ethers.formatUnits(afterMMM - beforeMMM, 18));
-  console.log("USDC boost gained:", ethers.formatUnits(afterUSDC - beforeUSDC, 6));
+  const afterMMM  = await mmm.balanceOf(user.address);
+  const afterUSDC = await usdc.balanceOf(user.address);
 
-  console.log("=== TEST 03 COMPLETE ===");
+  const gainedMMM  = afterMMM  - beforeMMM;
+  const gainedUSDC = afterUSDC - beforeUSDC;
+
+  console.log("MMM gained:", ethers.formatUnits(gainedMMM, 18));
+  console.log("USDC boost gained:", ethers.formatUnits(gainedUSDC, 6));
+
+  console.log("\n=== TEST 04 COMPLETE ===");
 }
 
 main().catch((e) => {

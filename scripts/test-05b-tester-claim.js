@@ -1,15 +1,22 @@
 // scripts/test-05b-tester-claim.js
 const hre = require("hardhat");
 const { ethers } = hre;
+const fs = require("fs");
+const path = require("path");
 
-/**
- * TEST 05b — Tester claims rewards from RewardVault
- * Preconditions:
- *  - minBalance met
- *  - hold time elapsed
- *  - cooldown elapsed
- *  - pending > 0
- */
+function loadManifest() {
+  const file = path.join(
+    "deployments",
+    hre.network.name,
+    "latest.json"
+  );
+
+  if (!fs.existsSync(file)) {
+    throw new Error(`No deployment manifest for ${hre.network.name}`);
+  }
+
+  return JSON.parse(fs.readFileSync(file));
+}
 
 function formatTime(sec) {
   const h = Math.floor(sec / 3600);
@@ -19,37 +26,30 @@ function formatTime(sec) {
 }
 
 async function main() {
-  console.log("\n=== TEST 05b: TESTER CLAIM ===\n");
 
-  /* ---------------------------------------------
-     Setup
-  --------------------------------------------- */
-  const provider = new ethers.JsonRpcProvider(
-    hre.network.config.url
-  );
+  console.log("\n=== TEST 05B: TESTER CLAIM (STRICT) ===\n");
 
-  const tester = new ethers.Wallet(
-    process.env.TESTER_PRIVATE_KEY,
-    provider
-  );
+  const [ , tester ] = await ethers.getSigners();
+  const manifest = loadManifest();
 
-  const MMM = await ethers.getContractAt(
-    "MMMToken",
-    process.env.TESTNET_MMM,
-    provider
-  );
+  const {
+    MMM,
+    REWARD_VAULT
+  } = manifest.contracts;
 
-  const RV = await ethers.getContractAt(
-    "RewardVault",
-    process.env.TESTNET_REWARDVAULT,
-    tester
-  );
+  const mmm = await ethers.getContractAt("MMMToken", MMM);
+  const rv  = await ethers.getContractAt("RewardVault", REWARD_VAULT, tester);
 
+  console.log("Network:", hre.network.name);
   console.log("Tester:", tester.address, "\n");
 
-  /* ---------------------------------------------
-     Read on-chain state
-  --------------------------------------------- */
+  /* ===================================================== */
+  /* 1. Read on-chain state                               */
+  /* ===================================================== */
+
+  const block = await ethers.provider.getBlock("latest");
+  const now = Number(block.timestamp);
+
   const [
     mmmBalRaw,
     pendingRaw,
@@ -57,103 +57,99 @@ async function main() {
     minHoldRaw,
     cooldownRaw,
     minBalanceRaw,
+    lastNonZeroAt
   ] = await Promise.all([
-    MMM.balanceOf(tester.address),
-    RV.pending(tester.address),
-    RV.lastClaimAt(tester.address),
-    RV.minHoldTimeSec(),
-    RV.claimCooldown(),
-    RV.minBalance(),
+    mmm.balanceOf(tester.address),
+    rv.pending(tester.address),
+    rv.lastClaimAt(tester.address),
+    rv.minHoldTimeSec(),
+    rv.claimCooldown(),
+    rv.minBalance(),
+    mmm.lastNonZeroAt(tester.address)
   ]);
 
-  const now = Math.floor(Date.now() / 1000);
-
-  const mmmBal = Number(ethers.formatEther(mmmBalRaw));
+  const mmmBal = mmmBalRaw;
   const pending = pendingRaw;
   const lastClaimAt = Number(lastClaimRaw);
   const minHoldSec = Number(minHoldRaw);
   const cooldownSec = Number(cooldownRaw);
-  const minBalance = Number(ethers.formatEther(minBalanceRaw));
+  const minBalance = minBalanceRaw;
 
   console.log("📊 STATUS");
-  console.log(`MMM balance : ${mmmBal} MMM`);
-  console.log(`Pending     : ${ethers.formatEther(pending)} MON`);
-  console.log(`Last claim  : ${lastClaimAt > 0 ? new Date(lastClaimAt * 1000).toLocaleString() : "Never"}`);
+  console.log("MMM balance :", ethers.formatUnits(mmmBal, 18));
+  console.log("Pending     :", ethers.formatUnits(pending, 18));
+  console.log("Last claim  :", lastClaimAt > 0 ? new Date(lastClaimAt * 1000).toLocaleString() : "Never");
   console.log("");
 
-  /* ---------------------------------------------
-     Eligibility checks
-  --------------------------------------------- */
+  /* ===================================================== */
+  /* 2. Eligibility checks                                */
+  /* ===================================================== */
 
-  // HOLD: only applies before first claim
   let holdRemaining = 0;
+
   if (lastClaimAt === 0 && minHoldSec > 0) {
-    holdRemaining = minHoldSec;
+    const holdEnd = Number(lastNonZeroAt) + minHoldSec;
+    holdRemaining = Math.max(0, holdEnd - now);
   }
 
-  // COOLDOWN
   let cooldownRemaining = 0;
+
   if (lastClaimAt > 0) {
-    cooldownRemaining = Math.max(
-      0,
-      lastClaimAt + cooldownSec - now
-    );
+    const cooldownEnd = lastClaimAt + cooldownSec;
+    cooldownRemaining = Math.max(0, cooldownEnd - now);
   }
 
   console.log("⏱️  ELIGIBILITY");
   console.log(
-    `Hold     : ${
-      holdRemaining === 0 ? "✅ OK" : `❌ ${formatTime(holdRemaining)} remaining`
-    }`
+    "Hold     :",
+    holdRemaining === 0 ? "✅ OK" : `❌ ${formatTime(holdRemaining)} remaining`
   );
   console.log(
-    `Cooldown : ${
-      cooldownRemaining === 0 ? "✅ OK" : `❌ ${formatTime(cooldownRemaining)} remaining`
-    }`
+    "Cooldown :",
+    cooldownRemaining === 0 ? "✅ OK" : `❌ ${formatTime(cooldownRemaining)} remaining`
   );
   console.log(
-    `Min bal  : ${
-      mmmBal >= minBalance ? "✅ OK" : `❌ Need ${minBalance} MMM`
-    }`
+    "Min bal  :",
+    mmmBal >= minBalance ? "✅ OK" : `❌ Need ${ethers.formatUnits(minBalance,18)} MMM`
   );
   console.log("");
 
   if (mmmBal < minBalance) {
-    console.log("❌ Cannot claim: insufficient MMM balance\n");
-    process.exit(0);
+    console.log("❌ Cannot claim: insufficient balance\n");
+    return;
   }
 
   if (pending === 0n) {
     console.log("⚠️  Nothing to claim\n");
-    process.exit(0);
+    return;
   }
 
   if (holdRemaining > 0 || cooldownRemaining > 0) {
     const wait = Math.max(holdRemaining, cooldownRemaining);
     console.log(`❌ Not eligible yet. Wait ${formatTime(wait)}\n`);
-    process.exit(0);
+    return;
   }
 
-  /* ---------------------------------------------
-     Execute claim
-  --------------------------------------------- */
+  /* ===================================================== */
+  /* 3. Execute claim                                     */
+  /* ===================================================== */
+
   console.log("✅ ELIGIBLE — CLAIMING\n");
 
-  const monBefore = await provider.getBalance(tester.address);
+  const beforeMMM = await mmm.balanceOf(tester.address);
 
-  const tx = await RV.claim({ gasLimit: 300000n });
+  const tx = await rv.claim();
   console.log("Tx:", tx.hash);
 
-  const receipt = await tx.wait();
+  await tx.wait();
 
-  const monAfter = await provider.getBalance(tester.address);
-  const gasCost = receipt.gasUsed * receipt.gasPrice;
-  const net = monAfter - monBefore + gasCost;
+  const afterMMM = await mmm.balanceOf(tester.address);
+
+  const gained = afterMMM - beforeMMM;
 
   console.log("\n==================================");
   console.log("🎉 CLAIM COMPLETE");
-  console.log(`MON gained : ${ethers.formatEther(net)} MON`);
-  console.log(`Gas used  : ${ethers.formatEther(gasCost)} MON`);
+  console.log("MMM gained :", ethers.formatUnits(gained, 18));
   console.log("==================================\n");
 }
 

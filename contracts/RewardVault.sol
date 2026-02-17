@@ -43,8 +43,8 @@ contract RewardVault is Ownable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
+
     error NothingToClaim();
-    error ExcludedFromRewards(address who);
     error BalanceBelowMin(address who, uint256 bal, uint256 minBal);
     error HoldTimeNotMet(address who);
     error ClaimCooldownActive(address who);
@@ -60,23 +60,31 @@ contract RewardVault is Ownable, ReentrancyGuard {
     uint48  public immutable claimCooldown;
     uint256 public immutable minBalance;
 
-    IBoostNFT public boostNFT; // optional
+    IBoostNFT public boostNFT;
 
-    address[] public excludedRewardAddresses;
-    mapping(address => bool) public isExcludedReward;
+    /*//////////////////////////////////////////////////////////////
+                            ACCOUNTING
+    //////////////////////////////////////////////////////////////*/
 
     uint256 public totalDistributed;
-    uint256 public accRewardPerToken;
+    uint256 public totalClaimed;          // NEW
+    uint256 public accRewardPerToken;     // Monotonic
 
     mapping(address => uint256) public rewardDebt;
     mapping(address => uint48)  public lastClaimAt;
+
+    /*//////////////////////////////////////////////////////////////
+                        SUPPLY EXCLUSION
+    //////////////////////////////////////////////////////////////*/
+
+    address[] public excludedRewardAddresses;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event BoostNFTSet(address indexed boostNFT);
-    event Notified(uint256 amount, uint256 eligibleSupply, uint256 newAccRewardPerToken);
+    event Notified(uint256 amount, uint256 eligibleSupply, uint256 newAcc);
     event Claimed(address indexed user, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
@@ -90,13 +98,18 @@ contract RewardVault is Ownable, ReentrancyGuard {
         uint256 _minBalance,
         address initialOwner
     ) Ownable(initialOwner) {
+
         if (_mmm == address(0) || initialOwner == address(0))
             revert ZeroAddress();
 
         mmm = IMMMToken(_mmm);
+
         minHoldTimeSec = _minHoldTimeSec;
         claimCooldown  = _claimCooldown;
         minBalance     = _minBalance;
+
+        // Exclude vault itself
+        excludedRewardAddresses.push(address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -104,8 +117,10 @@ contract RewardVault is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     function eligibleSupply() public view returns (uint256) {
+
         uint256 ts = mmm.totalSupply();
         uint256 sumExcluded;
+
         uint256 n = excludedRewardAddresses.length;
 
         for (uint256 i = 0; i < n; i++) {
@@ -116,11 +131,16 @@ contract RewardVault is Ownable, ReentrancyGuard {
     }
 
     function pending(address user) public view returns (uint256) {
+
         uint256 bal = mmm.balanceOf(user);
+
+        if (bal < minBalance) return 0;
+
         uint256 accrued = (bal * accRewardPerToken) / ACC_SCALE;
         uint256 debt = rewardDebt[user];
 
         if (accrued <= debt) return 0;
+
         return accrued - debt;
     }
 
@@ -135,10 +155,6 @@ contract RewardVault is Ownable, ReentrancyGuard {
 
     function addExcludedRewardAddress(address a) external onlyOwner {
         excludedRewardAddresses.push(a);
-    }
-
-    function setRewardExcluded(address a, bool excluded) external onlyOwner {
-        isExcludedReward[a] = excluded;
     }
 
     function notifyRewardAmount(uint256 amount)
@@ -168,16 +184,14 @@ contract RewardVault is Ownable, ReentrancyGuard {
     {
         address user = msg.sender;
 
-        if (isExcludedReward[user])
-            revert ExcludedFromRewards(user);
-
         uint256 bal = mmm.balanceOf(user);
+
         if (bal < minBalance)
             revert BalanceBelowMin(user, bal, minBalance);
 
         uint256 nowTs = block.timestamp;
 
-        /* ───────── HOLD TIME (FIRST CLAIM ONLY) ───────── */
+        /* ---------- HOLD (FIRST CLAIM ONLY) ---------- */
 
         if (lastClaimAt[user] == 0) {
 
@@ -187,11 +201,10 @@ contract RewardVault is Ownable, ReentrancyGuard {
                 try boostNFT.getBoost(user)
                     returns (IBoostNFT.BoostConfig memory cfg, uint8)
                 {
-                    if (cfg.holdReduction >= effectiveHold) {
+                    if (cfg.holdReduction >= effectiveHold)
                         effectiveHold = 0;
-                    } else {
+                    else
                         effectiveHold -= cfg.holdReduction;
-                    }
                 } catch {}
             }
 
@@ -201,27 +214,27 @@ contract RewardVault is Ownable, ReentrancyGuard {
                 revert HoldTimeNotMet(user);
         }
 
-        /* ───────── COOLDOWN ───────── */
+        /* ---------- COOLDOWN ---------- */
 
         uint256 effectiveCooldown = claimCooldown;
 
         if (address(boostNFT) != address(0)) {
             try boostNFT.getBoost(user)
-                returns (IBoostNFT.BoostConfig memory cfg, uint8 )
+                returns (IBoostNFT.BoostConfig memory cfg, uint8)
             {
-                if (cfg.cooldownReduction >= effectiveCooldown) {
+                if (cfg.cooldownReduction >= effectiveCooldown)
                     effectiveCooldown = 0;
-                } else {
+                else
                     effectiveCooldown -= cfg.cooldownReduction;
-                }
             } catch {}
         }
 
         uint48 last = lastClaimAt[user];
+
         if (last != 0 && nowTs < uint256(last) + effectiveCooldown)
             revert ClaimCooldownActive(user);
 
-        /* ───────── PAYOUT ───────── */
+        /* ---------- PAYOUT ---------- */
 
         claimed = pending(user);
         if (claimed == 0) revert NothingToClaim();
@@ -230,6 +243,8 @@ contract RewardVault is Ownable, ReentrancyGuard {
             (bal * accRewardPerToken) / ACC_SCALE;
 
         lastClaimAt[user] = uint48(nowTs);
+
+        totalClaimed += claimed;   // NEW
 
         require(
             IERC20Like(address(mmm)).transfer(user, claimed),

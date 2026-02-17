@@ -1,11 +1,22 @@
 // scripts/test-05c-check-status.js
 const hre = require("hardhat");
-const { ethers } = hre;
+const { ethers, network } = hre;
+const fs = require("fs");
+const path = require("path");
 
-/**
- * TEST 05c — Status checker for RewardVault eligibility
- * Safe to run anytime
- */
+function loadManifest() {
+  const file = path.join(
+    "deployments",
+    hre.network.name,
+    "latest.json"
+  );
+
+  if (!fs.existsSync(file)) {
+    throw new Error(`No deployment manifest for ${hre.network.name}`);
+  }
+
+  return JSON.parse(fs.readFileSync(file));
+}
 
 function formatTime(sec) {
   const h = Math.floor(sec / 3600);
@@ -14,144 +25,155 @@ function formatTime(sec) {
   return `${h}h ${m}m ${s}s`;
 }
 
+function formatDate(ts) {
+  return new Date(ts * 1000).toISOString().replace("T", " ").slice(0, 19);
+}
+
+async function getBlockTime() {
+  const block = await ethers.provider.getBlock("latest");
+  return Number(block.timestamp);
+}
+
 async function main() {
-  console.log("\n=== TEST 05c: STATUS CHECK ===\n");
 
-  /* ---------------------------------------------
-     Setup
-  --------------------------------------------- */
-  const provider = new ethers.JsonRpcProvider(
-    hre.network.config.url
+  console.log("\n=== TEST 05C: STATUS CHECK (AUTO TIME ADVANCE) ===\n");
+
+  const [ , tester ] = await ethers.getSigners();
+  const manifest = loadManifest();
+
+  const { MMM, REWARD_VAULT } = manifest.contracts;
+
+  const mmm = await ethers.getContractAt("MMMToken", MMM);
+  const rv  = await ethers.getContractAt("RewardVault", REWARD_VAULT);
+
+  async function computeState() {
+
+    const now = await getBlockTime();
+
+    const [
+      nativeBal,
+      mmmBalRaw,
+      pendingRaw,
+      lastClaimRaw,
+      minHoldRaw,
+      cooldownRaw,
+      minBalanceRaw,
+      lastNonZeroAt
+    ] = await Promise.all([
+      ethers.provider.getBalance(tester.address),
+      mmm.balanceOf(tester.address),
+      rv.pending(tester.address),
+      rv.lastClaimAt(tester.address),
+      rv.minHoldTimeSec(),
+      rv.claimCooldown(),
+      rv.minBalance(),
+      mmm.lastNonZeroAt(tester.address)
+    ]);
+
+    const mmmBal = mmmBalRaw;
+    const pending = pendingRaw;
+    const lastClaimAt = Number(lastClaimRaw);
+    const minHoldSec = Number(minHoldRaw);
+    const cooldownSec = Number(cooldownRaw);
+    const minBalance = minBalanceRaw;
+
+    let holdRemaining = 0;
+    if (lastClaimAt === 0 && minHoldSec > 0) {
+      const holdEnd = Number(lastNonZeroAt) + minHoldSec;
+      holdRemaining = Math.max(0, holdEnd - now);
+    }
+
+    let cooldownRemaining = 0;
+    if (lastClaimAt > 0) {
+      const cooldownEnd = lastClaimAt + cooldownSec;
+      cooldownRemaining = Math.max(0, cooldownEnd - now);
+    }
+
+    return {
+      now,
+      nativeBal,
+      mmmBal,
+      pending,
+      lastClaimAt,
+      minHoldSec,
+      cooldownSec,
+      minBalance,
+      holdRemaining,
+      cooldownRemaining
+    };
+  }
+
+  let state = await computeState();
+
+  console.log("🕒 BLOCK TIME :", formatDate(state.now));
+  console.log("");
+
+  /* ===================================================== */
+  /* AUTO ADVANCE IF NEEDED                                */
+  /* ===================================================== */
+
+  const totalWait = Math.max(
+    state.holdRemaining,
+    state.cooldownRemaining
   );
 
-  const tester = new ethers.Wallet(
-    process.env.TESTER_PRIVATE_KEY,
-    provider
-  );
+  if (hre.network.name === "localhost" && totalWait > 0) {
 
-  const MMM = await ethers.getContractAt(
-    "MMMToken",
-    process.env.TESTNET_MMM,
-    provider
-  );
+    console.log(`⏩ Auto advancing time by ${totalWait + 1}s...`);
 
-  const RV = await ethers.getContractAt(
-    "RewardVault",
-    process.env.TESTNET_REWARDVAULT,
-    provider
-  );
+    await network.provider.send("evm_increaseTime", [totalWait + 1]);
+    await network.provider.send("evm_mine");
 
-  console.log(`📍 Wallet: ${tester.address}\n`);
+    state = await computeState();
 
-  /* ---------------------------------------------
-     Fetch on-chain data
-  --------------------------------------------- */
-  const [
-    monBalRaw,
-    mmmBalRaw,
-    pendingRaw,
-    lastClaimRaw,
-    minHoldRaw,
-    cooldownRaw,
-    minBalanceRaw,
-  ] = await Promise.all([
-    provider.getBalance(tester.address),
-    MMM.balanceOf(tester.address),
-    RV.pending(tester.address),
-    RV.lastClaimAt(tester.address),
-    RV.minHoldTimeSec(),
-    RV.claimCooldown(),
-    RV.minBalance(),
-  ]);
+    console.log("🕒 NEW BLOCK TIME :", formatDate(state.now));
+    console.log("");
+  }
 
-  const now = Math.floor(Date.now() / 1000);
+  /* ===================================================== */
+  /* DISPLAY FINAL STATE                                   */
+  /* ===================================================== */
 
-  const monBal = Number(ethers.formatEther(monBalRaw));
-  const mmmBal = Number(ethers.formatEther(mmmBalRaw));
-  const pending = pendingRaw;
+  console.log("Network:", hre.network.name);
+  console.log("Wallet :", tester.address);
+  console.log("");
 
-  const lastClaimAt = Number(lastClaimRaw);
-  const minHoldSec = Number(minHoldRaw);
-  const cooldownSec = Number(cooldownRaw);
-  const minBalance = Number(ethers.formatEther(minBalanceRaw));
-
-  /* ---------------------------------------------
-     Display balances
-  --------------------------------------------- */
   console.log("💰 BALANCES");
-  console.log(`MON : ${monBal}`);
-  console.log(`MMM : ${mmmBal}`);
+  console.log("Native :", ethers.formatEther(state.nativeBal));
+  console.log("MMM    :", ethers.formatUnits(state.mmmBal, 18));
   console.log("");
 
-  /* ---------------------------------------------
-     Rewards
-  --------------------------------------------- */
   console.log("🎁 REWARDS");
-  console.log(`Pending : ${ethers.formatEther(pending)} MON`);
+  console.log("Pending MMM :", ethers.formatUnits(state.pending, 18));
   console.log("");
-
-  /* ---------------------------------------------
-     Timers (RewardVault v1 logic)
-  --------------------------------------------- */
-
-  // HOLD: only before first claim
-  let holdRemaining = 0;
-  if (lastClaimAt === 0 && minHoldSec > 0) {
-    holdRemaining = minHoldSec;
-  }
-
-  // COOLDOWN
-  let cooldownRemaining = 0;
-  if (lastClaimAt > 0) {
-    cooldownRemaining = Math.max(
-      0,
-      lastClaimAt + cooldownSec - now
-    );
-  }
-
-  const totalWait = Math.max(holdRemaining, cooldownRemaining);
 
   console.log("⏱️  TIMERS");
   console.log(
-    `Hold     : ${
-      holdRemaining === 0
-        ? "✅ Met"
-        : `❌ ${formatTime(holdRemaining)} remaining`
-    }`
+    "Hold     :",
+    state.holdRemaining === 0
+      ? "✅ Met"
+      : `❌ ${formatTime(state.holdRemaining)} remaining`
   );
   console.log(
-    `Cooldown : ${
-      cooldownRemaining === 0
-        ? "✅ Met"
-        : `❌ ${formatTime(cooldownRemaining)} remaining`
-    }`
+    "Cooldown :",
+    state.cooldownRemaining === 0
+      ? "✅ Met"
+      : `❌ ${formatTime(state.cooldownRemaining)} remaining`
   );
   console.log("");
 
-  /* ---------------------------------------------
-     Requirements
-  --------------------------------------------- */
-  console.log("📋 REQUIREMENTS");
-  console.log(`Min Hold Time : ${formatTime(minHoldSec)}`);
-  console.log(`Cooldown      : ${formatTime(cooldownSec)}`);
-  console.log(`Min Balance   : ${minBalance} MMM`);
-  console.log("");
-
-  /* ---------------------------------------------
-     Eligibility
-  --------------------------------------------- */
-  const hasMinBalance = mmmBal >= minBalance;
-  const hasRewards = pending > 0n;
-  const holdMet = holdRemaining === 0;
-  const cooldownMet = cooldownRemaining === 0;
+  const hasMinBalance = state.mmmBal >= state.minBalance;
+  const hasRewards = state.pending > 0n;
+  const holdMet = state.holdRemaining === 0;
+  const cooldownMet = state.cooldownRemaining === 0;
 
   console.log("==========================================");
-  console.log("✅ ELIGIBILITY\n");
+  console.log("ELIGIBILITY\n");
 
-  console.log(`Hold       : ${holdMet ? "✅" : "❌"}`);
-  console.log(`Cooldown   : ${cooldownMet ? "✅" : "❌"}`);
-  console.log(`MinBalance : ${hasMinBalance ? "✅" : "❌"}`);
-  console.log(`Rewards    : ${hasRewards ? "✅" : "⚠️ None"}`);
+  console.log("Hold       :", holdMet ? "✅" : "❌");
+  console.log("Cooldown   :", cooldownMet ? "✅" : "❌");
+  console.log("MinBalance :", hasMinBalance ? "✅" : "❌");
+  console.log("Rewards    :", hasRewards ? "✅" : "⚠️ None");
   console.log("");
 
   const canClaim =
@@ -162,15 +184,8 @@ async function main() {
 
   if (canClaim) {
     console.log("🎉 READY TO CLAIM");
-    console.log("Run:");
-    console.log("npx hardhat run scripts/test-05b-tester-claim.js --network monadTestnet");
-  } else if (totalWait > 0) {
-    console.log(`⏳ Wait ${formatTime(totalWait)}`);
-    console.log(`Claimable at: ${new Date((now + totalWait) * 1000).toLocaleString()}`);
-  } else if (!hasMinBalance) {
-    console.log(`❌ Need ${minBalance - mmmBal} more MMM`);
-  } else if (!hasRewards) {
-    console.log("⚠️  No rewards pending (run tax processing first)");
+  } else {
+    console.log("❌ NOT ELIGIBLE");
   }
 
   console.log("==========================================\n");

@@ -7,11 +7,11 @@ async function main() {
   const provider = ethers.provider;
 
   const sender = new ethers.Wallet(
-    process.env.TESTER_PRIVATE_KEY,
+    process.env.PRIVATE_KEY,
     provider
   );
 
-  const to = process.env.DOPTESTNET;
+  const to = process.env.FRESH3_WALLET;
   const amount = ethers.parseEther("0.90"); // 1 MON
 
   console.log("From :", sender.address);

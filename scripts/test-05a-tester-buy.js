@@ -1,13 +1,22 @@
 // scripts/test-05a-tester-buy.js
 const hre = require("hardhat");
 const { ethers } = hre;
+const fs = require("fs");
+const path = require("path");
 
-/**
- * Simple buy script: TESTER buys MMM
- * Works with MockRouter that mints tokens directly
- */
+function loadManifest() {
+  const file = path.join(
+    "deployments",
+    hre.network.name,
+    "latest.json"
+  );
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  if (!fs.existsSync(file)) {
+    throw new Error(`No deployment manifest for ${hre.network.name}`);
+  }
+
+  return JSON.parse(fs.readFileSync(file));
+}
 
 function formatTime(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -17,67 +26,78 @@ function formatTime(seconds) {
 }
 
 async function main() {
-  console.log("\n=== TESTER: Buy MMM (Direct Transfer) ===\n");
 
-  // Setup
-  const provider = new ethers.JsonRpcProvider(hre.network.config.url);
-  const tester = new ethers.Wallet(process.env.TESTER_PRIVATE_KEY, provider);
-  const deployer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+  console.log("\n=== TEST 05A: Tester Buy MMM (Direct Transfer) ===\n");
 
-  const MMM = await ethers.getContractAt("MMMToken", process.env.TESTNET_MMM, deployer);
-  const RewardVault = await ethers.getContractAt("RewardVault", process.env.TESTNET_REWARDVAULT, tester);
+  const [deployer, tester] = await ethers.getSigners();
+  const manifest = loadManifest();
 
-  console.log("Tester Wallet:", tester.address);
-  console.log("Deployer Wallet:", deployer.address);
+  const {
+    MMM,
+    REWARD_VAULT
+  } = manifest.contracts;
 
-  // Buy amount
-  const BUY_AMOUNT = process.env.BUY_AMOUNT || "100";
+  const mmm = await ethers.getContractAt("MMMToken", MMM, deployer);
+  const rewardVault = await ethers.getContractAt("RewardVault", REWARD_VAULT, tester);
+
+  console.log("Network:", hre.network.name);
+  console.log("Deployer:", deployer.address);
+  console.log("Tester:", tester.address);
+  console.log("");
+
+  const BUY_AMOUNT = "100"; // deterministic for tests
   const buyAmountWei = ethers.parseUnits(BUY_AMOUNT, 18);
 
-  console.log(`\nTransfer Amount: ${BUY_AMOUNT} MMM\n`);
+  /* ===================================================== */
+  /* 1. Safety check                                      */
+  /* ===================================================== */
 
-  // Check deployer balance
-  const deployerBalance = await MMM.balanceOf(deployer.address);
+  const deployerBalance = await mmm.balanceOf(deployer.address);
+
   if (deployerBalance < buyAmountWei) {
-    throw new Error(`Deployer has insufficient MMM. Need ${BUY_AMOUNT}, have ${ethers.formatUnits(deployerBalance, 18)}`);
+    throw new Error(
+      `Deployer insufficient MMM. Need ${BUY_AMOUNT}, have ${ethers.formatUnits(deployerBalance, 18)}`
+    );
   }
 
-  /* =======================================================
-     Execute Transfer (simulates buy)
-  ======================================================= */
-  console.log("Transferring MMM from deployer → tester...");
-  console.log("(This simulates a buy and triggers hold timer)\n");
+  /* ===================================================== */
+  /* 2. Transfer (simulated buy)                          */
+  /* ===================================================== */
 
-  const tx = await MMM.transfer(tester.address, buyAmountWei);
-  console.log(`Tx: ${tx.hash}`);
+  console.log(`Transferring ${BUY_AMOUNT} MMM → tester...\n`);
+
+  const tx = await mmm.transfer(tester.address, buyAmountWei);
   await tx.wait();
-  console.log("✅ Transferred\n");
 
-  /* =======================================================
-     Show Status
-  ======================================================= */
-  const [mmmBalance, pending, lastNonZeroAt, minHoldTime] = await Promise.all([
-    MMM.balanceOf(tester.address),
-    RewardVault.pending(tester.address),
-    MMM.lastNonZeroAt(tester.address),
-    RewardVault.minHoldTimeSec(),
+  console.log("✓ Transfer complete");
+
+  /* ===================================================== */
+  /* 3. Status after transfer                             */
+  /* ===================================================== */
+
+  const [
+    testerBalance,
+    pending,
+    lastNonZeroAt,
+    minHoldTime
+  ] = await Promise.all([
+    mmm.balanceOf(tester.address),
+    rewardVault.pending(tester.address),
+    mmm.lastNonZeroAt(tester.address),
+    rewardVault.minHoldTimeSec()
   ]);
 
-  console.log("==========================================");
-  console.log("✅ TRANSFER COMPLETE\n");
-  console.log(`MMM Balance: ${ethers.formatUnits(mmmBalance, 18)} MMM`);
-  console.log(`Pending Rewards: ${ethers.formatEther(pending)} MON`);
-  console.log(`Hold Started: ${new Date(Number(lastNonZeroAt) * 1000).toLocaleString()}`);
-  
-  const canClaimAt = Number(lastNonZeroAt) + Number(minHoldTime);
-  console.log(`Can Claim At: ${new Date(canClaimAt * 1000).toLocaleString()}`);
-  console.log(`Wait Time: ${formatTime(Number(minHoldTime))}\n`);
+  const holdEnd = Number(lastNonZeroAt) + Number(minHoldTime);
 
-  console.log("Next Steps:");
-  console.log("1. Open UI and connect with TESTER wallet");
-  console.log("2. Watch the hold timer count down");
-  console.log("3. After timer expires, click Claim button");
-  console.log("==========================================\n");
+  console.log("\n--- Post Buy Status ---\n");
+  console.log("MMM Balance:", ethers.formatUnits(testerBalance, 18));
+  console.log("Pending Rewards:", ethers.formatUnits(pending, 18));
+  console.log("Hold Started:", new Date(Number(lastNonZeroAt) * 1000).toLocaleString());
+  console.log("Can Claim At:", new Date(holdEnd * 1000).toLocaleString());
+  console.log("Hold Duration:", formatTime(Number(minHoldTime)));
+  console.log("");
+
+  console.log("=== TEST 05A COMPLETE ===\n");
 }
 
 main().catch((e) => {
