@@ -170,9 +170,8 @@ contract MMMToken is ERC20, Ownable {
             }
         }
     }
-
     /*//////////////////////////////////////////////////////////////
-                        OZ v5 TRANSFER HOOK
+                    OZ v5 TRANSFER HOOK (FIXED)
     //////////////////////////////////////////////////////////////*/
 
     function _update(address from, address to, uint256 amount) internal override {
@@ -185,7 +184,7 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        // Trading lock before launch
+        // Trading lock
         if (!tradingEnabled) {
             if (!isTaxExempt[from] && !isTaxExempt[to]) {
                 revert TradingNotEnabled();
@@ -208,9 +207,12 @@ contract MMMToken is ERC20, Ownable {
 
         uint256 taxBps = 0;
 
-        if (isBuy(from, to)) {
+        bool buy = isBuy(from, to);
+        bool sell = isSell(from, to);
+
+        if (buy) {
             taxBps = getBuyTaxBps();
-        } else if (isSell(from, to)) {
+        } else if (sell) {
             taxBps = getSellTaxBps();
         }
 
@@ -224,14 +226,27 @@ contract MMMToken is ERC20, Ownable {
         uint256 tax = (amount * taxBps) / BPS;
         uint256 net = amount - tax;
 
-        if (tax > 0) {
-            super._update(from, taxVault, tax);
-        }
+        if (buy) {
+            // FULL amount from pair to buyer (DO NOT tax pair)
+            super._update(from, to, amount);
 
-        super._update(from, to, net);
+            if (tax > 0) {
+                // Take tax from buyer
+                super._update(to, taxVault, tax);
+            }
+
+        } else {
+            // SELL: tax from sender
+            if (tax > 0) {
+                super._update(from, taxVault, tax);
+            }
+
+            super._update(from, to, net);
+        }
 
         _syncLastNonZero(from);
         _syncLastNonZero(to);
         _syncLastNonZero(taxVault);
     }
+
 }
