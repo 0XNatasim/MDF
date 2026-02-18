@@ -25,6 +25,8 @@ const CONFIG = {
   taxVault: "0x4d6565e0b69EbC215519540B4b70741624937bA2",
   router: "0x6DCc5BF515C9012899fa6A4d9b84f08805504021",
   wmon: "0xeDFb5EEAfD1F001370f88af3Ce1bb276CB6f9979",
+  pair: "0xecc5A1def9Ca3839b827ec94c86d8f1578FEECCF",
+  factory: "0x1ec0a85B260531bC4ffAa74E3d678CD9f83Aac51",
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
@@ -245,18 +247,7 @@ async function loadVaultParams() {
   );
 }
 
-async function refreshAll() {
-  if (refreshInFlight) return;
-  refreshInFlight = true;
-
-  try {
-    // existing refreshAll body
-  } finally {
-    setTimeout(() => {
-      refreshInFlight = false;
-    }, 1500); // 1.5s cooldown
-  }
-}
+// refreshAll is defined below (single implementation)
 
 
 /* =========================
@@ -347,11 +338,16 @@ async function initReadSide() {
   try {
     EFFECTIVE_WMON = CONFIG.wmon;
     wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
-    factoryRead = null;
-    pairRead = null;
-    pairAddress = null;
+
+    // Initialize factory and pair directly from CONFIG
+    if (CONFIG.factory && CONFIG.pair) {
+      factoryRead = new ethers.Contract(CONFIG.factory, FACTORY_ABI, readProvider);
+      pairAddress = CONFIG.pair;
+      pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
+      logInfo("Pair initialized:", pairAddress);
+    }
   } catch (e) {
-    console.warn("Could not read factory from router:", e);
+    console.warn("Could not initialize pair:", e);
   }
 
   logInfo("Read-side initialization complete");
@@ -1470,6 +1466,8 @@ async function execSwap() {
    Refresh
 ========================= */
 async function refreshAll() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   try {
     showLoading("Refreshing on-chain data…");
 
@@ -1511,6 +1509,8 @@ async function refreshAll() {
   } catch (e) {
     hideLoading();
     uiError(`Refresh failed: ${e?.message || e}`, e);
+  } finally {
+    setTimeout(() => { refreshInFlight = false; }, 1500);
   }
 }
 
