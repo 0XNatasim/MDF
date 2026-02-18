@@ -27,6 +27,10 @@ interface IRewardVault {
     function notifyRewardAmount(uint256 amount) external;
 }
 
+interface IRewardVaultAdmin {
+    function addExcludedRewardAddress(address a) external;
+}
+
 /*//////////////////////////////////////////////////////////////
                             TAX VAULT
 //////////////////////////////////////////////////////////////*/
@@ -67,7 +71,6 @@ contract TaxVault is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     address public rewardVault;
-    address public swapVault;
     address public marketingVault;
     address public teamVestingVault;
 
@@ -161,21 +164,25 @@ contract TaxVault is Ownable {
 
     function wireOnce(
         address rewardVault_,
-        address swapVault_,
         address marketingVault_,
         address teamVestingVault_
     ) external onlyOwner {
         if (
             rewardVault_ == address(0) ||
-            swapVault_ == address(0) ||
             marketingVault_ == address(0) ||
             teamVestingVault_ == address(0)
         ) revert ZeroAddress();
 
         rewardVault = rewardVault_;
-        swapVault = swapVault_;
         marketingVault = marketingVault_;
         teamVestingVault = teamVestingVault_;
+    }
+
+    /// @notice Exclude an address from RewardVault eligible supply.
+    ///         Use this to block malicious wallets from earning rewards.
+    function excludeFromRewards(address a) external onlyOwner {
+        if (a == address(0)) revert ZeroAddress();
+        IRewardVaultAdmin(rewardVault).addExcludedRewardAddress(a);
     }
 
     /*//////////////////////////////////////////////////////////////

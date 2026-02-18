@@ -10,7 +10,7 @@ async function main() {
   console.log("================================================\n");
 
   // 3 multisig owners for MarketingVault and TeamVestingVault
-  // Using deployer for all 3 on testnet — change for mainnet
+  // Using deployer for all 3 on testnet – change for mainnet
   const MULTISIG_OWNERS = [
     deployer.address,
     process.env.TESTNET_MULTISIG_2 || deployer.address,
@@ -95,7 +95,9 @@ async function main() {
 
   /* ============================================================
      7. Deploy RewardVault
-     Note: owner must be TaxVault so it can call notifyRewardAmount
+     Note: owner starts as deployer so we can wire BoostNFT and
+     exclusions first, then transfer ownership to TaxVault so it
+     can call notifyRewardAmount() during tax processing.
   ============================================================ */
   const RewardVault = await ethers.getContractFactory("RewardVault");
   const rewardVault = await RewardVault.deploy(
@@ -103,23 +105,14 @@ async function main() {
     7 * 24 * 3600,                        // 7 day min hold
     24 * 3600,                             // 24h claim cooldown
     ethers.parseUnits("1000", 18),         // 1000 MMM min balance
-    deployer.address                       // owner = deployer FIRST (so we can wire BoostNFT)
+    deployer.address                       // owner = deployer FIRST
   );
   await rewardVault.waitForDeployment();
   const REWARDVAULT_ADDR = await rewardVault.getAddress();
   console.log("RewardVault deployed:   ", REWARDVAULT_ADDR);
 
   /* ============================================================
-     8. Deploy SwapVault
-  ============================================================ */
-  const SwapVault = await ethers.getContractFactory("SwapVault");
-  const swapVault = await SwapVault.deploy(MMM_ADDR, WETH_ADDR, deployer.address);
-  await swapVault.waitForDeployment();
-  const SWAPVAULT_ADDR = await swapVault.getAddress();
-  console.log("SwapVault deployed:     ", SWAPVAULT_ADDR);
-
-  /* ============================================================
-     9. Deploy MarketingVault (2-of-3 multisig, holds USDC)
+     8. Deploy MarketingVault (2-of-3 multisig, holds USDC)
   ============================================================ */
   const MarketingVault = await ethers.getContractFactory("MarketingVault");
   const marketingVault = await MarketingVault.deploy(USDC_ADDR, MULTISIG_OWNERS);
@@ -128,7 +121,7 @@ async function main() {
   console.log("MarketingVault deployed:", MARKETINGVAULT_ADDR);
 
   /* ============================================================
-     10. Deploy TeamVestingVault (2-of-3 multisig, holds USDC)
+     9. Deploy TeamVestingVault (2-of-3 multisig, holds USDC)
   ============================================================ */
   const TeamVestingVault = await ethers.getContractFactory("TeamVestingVault");
   const teamVestingVault = await TeamVestingVault.deploy(USDC_ADDR, MULTISIG_OWNERS);
@@ -137,7 +130,7 @@ async function main() {
   console.log("TeamVestingVault deployed:", TEAMVESTINGVAULT_ADDR);
 
   /* ============================================================
-     11. Deploy BoostNFT
+     10. Deploy BoostNFT
   ============================================================ */
   const BoostNFT = await ethers.getContractFactory("BoostNFT");
   const boostNFT = await BoostNFT.deploy(deployer.address);
@@ -146,14 +139,14 @@ async function main() {
   console.log("BoostNFT deployed:      ", BOOSTNFT_ADDR);
 
   /* ============================================================
-     12. Create MMM / WMON Pair
+     11. Create MMM / WMON Pair
   ============================================================ */
   await (await factory.createPair(MMM_ADDR, WETH_ADDR)).wait();
   const PAIR_ADDR = await factory.getPair(MMM_ADDR, WETH_ADDR);
   console.log("Pair created:           ", PAIR_ADDR);
 
   /* ============================================================
-     13. Wire MMM Token
+     12. Wire MMM Token
   ============================================================ */
   await (await mmm.setPair(PAIR_ADDR)).wait();
   await (await mmm.setRouter(ROUTER_ADDR)).wait();
@@ -161,49 +154,37 @@ async function main() {
   console.log("MMM wired (pair, router, taxVault).");
 
   /* ============================================================
-     14. Tax Exemptions
+     13. Tax Exemptions
   ============================================================ */
   await (await mmm.setTaxExempt(deployer.address,    true)).wait();
   await (await mmm.setTaxExempt(TAXVAULT_ADDR,       true)).wait();
   await (await mmm.setTaxExempt(ROUTER_ADDR,         true)).wait();
   await (await mmm.setTaxExempt(REWARDVAULT_ADDR,    true)).wait();
-  await (await mmm.setTaxExempt(SWAPVAULT_ADDR,      true)).wait();
   console.log("Tax exemptions configured.");
 
   /* ============================================================
-     15. Wire TaxVault
+     14. Wire TaxVault
   ============================================================ */
   await (await taxVault.setRouter(ROUTER_ADDR)).wait();
   await (await taxVault.approveRouter()).wait();
   await (await taxVault.wireOnce(
     REWARDVAULT_ADDR,
-    SWAPVAULT_ADDR,
     MARKETINGVAULT_ADDR,
     TEAMVESTINGVAULT_ADDR
   )).wait();
   console.log("TaxVault wired.");
 
   /* ============================================================
-     16. Wire SwapVault
-  ============================================================ */
-  await (await swapVault.setRouterOnce(ROUTER_ADDR)).wait();
-  await (await swapVault.setTaxVaultOnce(TAXVAULT_ADDR)).wait();
-  await (await swapVault.setRewardVaultOnce(REWARDVAULT_ADDR)).wait();
-  console.log("SwapVault wired.");
-
-  /* ============================================================
-     17. Wire RewardVault - set BoostNFT, then transfer ownership to TaxVault
-         Deployer owns RewardVault at this point, so we can wire freely.
-         After wiring, we transfer ownership to TaxVault so it can call
-         notifyRewardAmount() during tax processing.
+     15. Wire RewardVault
+         - Set BoostNFT
+         - Exclude all protocol addresses from eligible supply
+         - Transfer ownership to TaxVault last
   ============================================================ */
   await (await rewardVault.setBoostNFT(BOOSTNFT_ADDR)).wait();
   console.log("RewardVault: BoostNFT set.");
 
-  // Exclude all protocol addresses from reward eligible supply
   await (await rewardVault.addExcludedRewardAddress(PAIR_ADDR)).wait();
   await (await rewardVault.addExcludedRewardAddress(TAXVAULT_ADDR)).wait();
-  await (await rewardVault.addExcludedRewardAddress(SWAPVAULT_ADDR)).wait();
   await (await rewardVault.addExcludedRewardAddress(deployer.address)).wait();
   console.log("RewardVault: exclusions set.");
 
@@ -212,7 +193,7 @@ async function main() {
   console.log("RewardVault: ownership transferred to TaxVault.");
 
   /* ============================================================
-     18. Add Initial Liquidity — Manual seed (bypasses router)
+     16. Add Initial Liquidity – Manual seed (bypasses router)
          Monad testnet gas estimator is broken for addLiquidityETH
   ============================================================ */
   const amountMMM = ethers.parseUnits("1000", 18);
@@ -229,10 +210,10 @@ async function main() {
 
   // Mint LP tokens
   await (await pair.mint(deployer.address, { gasLimit: 300000 })).wait();
-  console.log("Liquidity seeded: 5000 MMM + 5 WMON.");
+  console.log("Liquidity seeded: 1000 MMM + 1 WMON.");
 
   /* ============================================================
-     19. Launch Token
+     17. Launch Token
   ============================================================ */
   await (await mmm.launch()).wait();
   console.log("Token launched.");
@@ -251,7 +232,6 @@ async function main() {
   console.log("TESTNET_Pair:             ", PAIR_ADDR);
   console.log("TESTNET_TaxVault:         ", TAXVAULT_ADDR);
   console.log("TESTNET_RewardVault:      ", REWARDVAULT_ADDR);
-  console.log("TESTNET_SwapVault:        ", SWAPVAULT_ADDR);
   console.log("TESTNET_MarketingVault:   ", MARKETINGVAULT_ADDR);
   console.log("TESTNET_TeamVestingVault: ", TEAMVESTINGVAULT_ADDR);
   console.log("TESTNET_BoostNFT:         ", BOOSTNFT_ADDR);
@@ -260,7 +240,10 @@ async function main() {
   console.log("1. Update your .env with all addresses above.");
   console.log("2. Set TESTNET_MULTISIG_2 and TESTNET_MULTISIG_3 in .env");
   console.log("   for proper 2-of-3 multisig on Marketing/TeamVesting vaults.");
-  console.log("3. RewardVault ownership transferred to TaxVault - BoostNFT already wired.");
+  console.log("3. RewardVault ownership transferred to TaxVault.");
+  console.log("4. To exclude malicious addresses from rewards later, add");
+  console.log("   excludeFromRewards(address) to TaxVault.sol and call it");
+  console.log("   as owner — see previous discussion.");
   console.log("================================================");
 }
 
