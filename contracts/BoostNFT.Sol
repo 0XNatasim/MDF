@@ -73,7 +73,7 @@ contract BoostNFT is ERC721, Ownable {
         uint32 holdReduction,
         uint32 cooldownReduction
     );
-    event BoostConfigFrozen();
+    event BoostConfigFrozenEvent();
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
@@ -207,7 +207,7 @@ contract BoostNFT is ERC721, Ownable {
 
     function freezeBoostConfig() external onlyOwner {
         boostConfigFrozen = true;
-        emit BoostConfigFrozen();
+        emit BoostConfigFrozenEvent();
     }
 
     /*//////////////////////////////////////////////////////////////
