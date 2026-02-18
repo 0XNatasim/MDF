@@ -24,6 +24,7 @@ const CONFIG = {
   rewardVault: "0x1714306ba1FdB2CC965745F5A358a204D4cF0326",
   taxVault: "0x25F42Da7156fAc064b5D5399b75A9D0b65c1fF84",
   router: "0x21BBbb385152E1E6290E901b760E251D59b91053",
+  pair: "0x3862500f9b994687a16dB5a03C0beE768048afC7",
   wmon: "0x89D8439a39d2BD21F060c0A1be0F83F4992003c0",
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
@@ -347,9 +348,8 @@ async function initReadSide() {
   try {
     EFFECTIVE_WMON = CONFIG.wmon;
     wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
-    factoryRead = null;
-    pairRead = null;
-    pairAddress = null;
+    pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
+    pairAddress = CONFIG.pair;  // add pair to CONFIG
   } catch (e) {
     console.warn("Could not read factory from router:", e);
   }
