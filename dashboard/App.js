@@ -19,11 +19,13 @@ const CONFIG = {
   rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
-  mmmToken: "0x268389267b21E0290D8989e4295a5570D2E39cCd",
-  rewardVault: "0x9a65dc97A03665A14f23bBE7a03200E7729D0df7",
-  taxVault: "0x137a19ecedd679B21E68D123D315c02d4F771Df7",
-  router: "0x73e5bd5D75009cb493a396788d7b811F8c49D4FE",
-  wmon: "0x80D125a2cb4E263Fe3240F3045187C6F272Ca5f9",
+  // === CONTRACTS (MONAD TESTNET) ===
+  mmmToken: "0x16D7c81e83f10f82F766621b3689240AB5f1248E",
+  rewardVault: "0x29923e9d46bf7270737cDCd26341E66101d52b30",
+  taxVault: "0x4d6565e0b69EbC215519540B4b70741624937bA2",
+  router: "0x6DCc5BF515C9012899fa6A4d9b84f08805504021",
+  wmon: "0xeDFb5EEAfD1F001370f88af3Ce1bb276CB6f9979",
+
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
   LS_ACTIONS: "mmm_action_log",
