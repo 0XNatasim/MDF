@@ -95,7 +95,6 @@ contract MMMToken is ERC20, Ownable {
         emit RouterSet(router_);
     }
 
-    /// @notice Final launch trigger. Cannot be reversed.
     function launch() external onlyOwner {
         if (launched) revert AlreadyLaunched();
 
@@ -134,11 +133,11 @@ contract MMMToken is ERC20, Ownable {
 
         uint256 elapsed = block.timestamp - launchTime;
 
-        if (elapsed < 10 minutes) return 8000;  // 80%
-        if (elapsed < 20 minutes) return 5000;  // 50%
-        if (elapsed < 40 minutes) return 3000;  // 30%
-        if (elapsed < 60 minutes) return 1000;  // 10%
-        return 500;                              // 5% final
+        if (elapsed < 10 minutes) return 8000;
+        if (elapsed < 20 minutes) return 5000;
+        if (elapsed < 40 minutes) return 3000;
+        if (elapsed < 60 minutes) return 1000;
+        return 500;
     }
 
     function getSellTaxBps() public view returns (uint256) {
@@ -146,11 +145,11 @@ contract MMMToken is ERC20, Ownable {
 
         uint256 elapsed = block.timestamp - launchTime;
 
-        if (elapsed < 20 minutes) return 8000;  // 80%
-        if (elapsed < 40 minutes) return 6000;  // 60%
-        if (elapsed < 60 minutes) return 4000;  // 40%
-        if (elapsed < 90 minutes) return 2000;  // 20%
-        return 500;                              // 5% final
+        if (elapsed < 20 minutes) return 8000;
+        if (elapsed < 40 minutes) return 6000;
+        if (elapsed < 60 minutes) return 4000;
+        if (elapsed < 90 minutes) return 2000;
+        return 500;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -164,19 +163,20 @@ contract MMMToken is ERC20, Ownable {
 
         if (bal == 0) {
             lastNonZeroAt[a] = 0;
-        } else {
-            if (lastNonZeroAt[a] == 0) {
-                lastNonZeroAt[a] = block.timestamp;
-            }
+        } else if (lastNonZeroAt[a] == 0) {
+            lastNonZeroAt[a] = block.timestamp;
         }
     }
+
     /*//////////////////////////////////////////////////////////////
-                    OZ v5 TRANSFER HOOK (FIXED)
+                    OZ v5 TRANSFER HOOK
     //////////////////////////////////////////////////////////////*/
 
     function _update(address from, address to, uint256 amount) internal override {
 
-        // Mint / burn
+        // ------------------------------------------------------------
+        // Mint / Burn — no tax
+        // ------------------------------------------------------------
         if (from == address(0) || to == address(0)) {
             super._update(from, to, amount);
             _syncLastNonZero(from);
@@ -184,13 +184,18 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        // Trading lock
+        // ------------------------------------------------------------
+        // Trading Lock
+        // ------------------------------------------------------------
         if (!tradingEnabled) {
             if (!isTaxExempt[from] && !isTaxExempt[to]) {
                 revert TradingNotEnabled();
             }
         }
 
+        // ------------------------------------------------------------
+        // Should We Take Tax?
+        // ------------------------------------------------------------
         bool takeTax =
             launched &&
             taxVault != address(0) &&
@@ -205,16 +210,13 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        uint256 taxBps = 0;
+        bool isBuyTx = from == pair;
+        bool isSellTx = to == pair;
 
-        bool buy = isBuy(from, to);
-        bool sell = isSell(from, to);
-
-        if (buy) {
-            taxBps = getBuyTaxBps();
-        } else if (sell) {
-            taxBps = getSellTaxBps();
-        }
+        uint256 taxBps =
+            isBuyTx  ? getBuyTaxBps() :
+            isSellTx ? getSellTaxBps() :
+            0;
 
         if (taxBps == 0) {
             super._update(from, to, amount);
@@ -224,29 +226,36 @@ contract MMMToken is ERC20, Ownable {
         }
 
         uint256 tax = (amount * taxBps) / BPS;
-        uint256 net = amount - tax;
 
-        if (buy) {
-            // FULL amount from pair to buyer (DO NOT tax pair)
-            super._update(from, to, amount);
+        // ------------------------------------------------------------
+        // BUY  (pair → buyer)
+        // ------------------------------------------------------------
+        if (isBuyTx) {
+            super._update(from, taxVault, tax);
+            super._update(from, to, amount - tax);
 
-            if (tax > 0) {
-                // Take tax from buyer
-                super._update(to, taxVault, tax);
-            }
-
-        } else {
-            // SELL: tax from sender
-            if (tax > 0) {
-                super._update(from, taxVault, tax);
-            }
-
-            super._update(from, to, net);
+            _syncLastNonZero(to);
+            _syncLastNonZero(taxVault);
+            return;
         }
 
+        // ------------------------------------------------------------
+        // SELL (seller → pair)
+        // ------------------------------------------------------------
+        if (isSellTx) {
+            super._update(from, taxVault, tax);
+            super._update(from, to, amount - tax);
+
+            _syncLastNonZero(from);
+            _syncLastNonZero(taxVault);
+            return;
+        }
+
+        // ------------------------------------------------------------
+        // Wallet → Wallet
+        // ------------------------------------------------------------
+        super._update(from, to, amount);
         _syncLastNonZero(from);
         _syncLastNonZero(to);
-        _syncLastNonZero(taxVault);
     }
-
 }

@@ -80,6 +80,20 @@ async function main() {
   );
 
   console.log("\n=== DONE ===\n");
+
+  const received = mmmAfter - mmmBefore;
+  const taxPaid = /* can't know exact from on-chain directly */;
+
+  // Better: compute expected tax rate
+  const launchTime = await MMM.launchTime();
+  const elapsed = now - Number(launchTime);
+  console.log("Elapsed since launch (sec):", elapsed);
+  console.log("Expected buy tax: ", 
+    elapsed < 600 ? "80%" :
+    elapsed < 1200 ? "50%" :
+    elapsed < 2400 ? "30%" :
+    elapsed < 3600 ? "10%" : "5%"
+  );
 }
 
 main().catch((e) => {

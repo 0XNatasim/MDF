@@ -18,14 +18,16 @@ const CONFIG = {
   nativeSymbol: "MON",
   rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
-  // === CONTRACTS (MONAD TESTNET) ===
-  // === CONTRACTS (MONAD TESTNET) ===
-  mmmToken: "0xD07cbD5E43992c8f3dA467F40E0970D484caC5Ee",
-  rewardVault: "0x1714306ba1FdB2CC965745F5A358a204D4cF0326",
-  taxVault: "0x25F42Da7156fAc064b5D5399b75A9D0b65c1fF84",
-  router: "0x21BBbb385152E1E6290E901b760E251D59b91053",
-  pair: "0x3862500f9b994687a16dB5a03C0beE768048afC7",
-  wmon: "0x89D8439a39d2BD21F060c0A1be0F83F4992003c0",
+// === CONTRACTS (MONAD TESTNET) ===
+mmmToken: "0xF806B9D7D7Eb9ddc6aAfe3D27ae8a93A921cC2Df",
+rewardVault: "0x5E9D9a8CDC2a7F9a4493e8a76a123c583bF44299",
+taxVault: "0xc7612D311A3003cbb51944Cb4136456cC3C6A073",
+router: "0xd6C10d4E9F656495F0076F5daE1C7a39be4d84b5",
+pair: "0x7305a508911EBc2d50d99890237b5110F90C60b3",
+wmon: "0x02D5ab3d9bBf4abB0043929ac44faBB090A28F59",
+
+
+  
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
