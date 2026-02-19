@@ -196,8 +196,8 @@ async function main() {
      16. Add Initial Liquidity – Manual seed (bypasses router)
          Monad testnet gas estimator is broken for addLiquidityETH
   ============================================================ */
-  const amountMMM = ethers.parseUnits("1000", 18);
-  const amountETH = ethers.parseEther("1");
+  const amountMMM = ethers.parseUnits("10000", 18);
+  const amountETH = ethers.parseEther("10");
 
   const pair = await ethers.getContractAt("UniswapV2Pair", PAIR_ADDR);
 
