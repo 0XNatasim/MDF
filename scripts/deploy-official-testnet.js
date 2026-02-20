@@ -56,13 +56,76 @@ async function main() {
   console.log("Factory deployed:       ", FACTORY_ADDR);
 
   /* ============================================================
-     4. Deploy Uniswap Router02
+     3.5. Compute INIT_CODE_HASH and patch Router bytecode
+          The UniswapV2Router uses a hardcoded keccak256(pair bytecode)
+          inside UniswapV2Library.pairFor() to compute pair addresses.
+          We grab the compiled Pair bytecode, hash it, find the old
+          hardcoded hash inside the compiled Router bytecode, and swap
+          it in-memory before deploying — no Solidity edits needed.
   ============================================================ */
+  const Pair = await ethers.getContractFactory("UniswapV2Pair");
+  const realInitCodeHash = ethers.keccak256(Pair.bytecode);
+  console.log("\nINIT_CODE_HASH (real):  ", realInitCodeHash);
+
+  // The canonical Uniswap v2 hash that is hardcoded in the library.
+  // If your library uses a different placeholder, add it to this array.
+  const KNOWN_PLACEHOLDERS = [
+    "96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f", // mainnet default
+    "e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303", // common fork variant
+  ];
+
   const Router = await ethers.getContractFactory("UniswapV2Router02");
-  const router = await Router.deploy(FACTORY_ADDR, WETH_ADDR);
+  let routerBytecode = Router.bytecode;
+
+  // Strip 0x, work in lowercase hex
+  const realHashHex = realInitCodeHash.slice(2).toLowerCase();
+  let patched = false;
+
+  for (const placeholder of KNOWN_PLACEHOLDERS) {
+    if (routerBytecode.toLowerCase().includes(placeholder)) {
+      // Replace ALL occurrences (there are usually 2: one in each swap helper)
+      const regex = new RegExp(placeholder, "gi");
+      routerBytecode = routerBytecode.replace(regex, realHashHex);
+      console.log(`Patched Router bytecode: replaced '${placeholder}' → '${realHashHex}'`);
+      patched = true;
+      break;
+    }
+  }
+
+  if (!patched) {
+    // Auto-detect: the old hash must be a 32-byte (64 hex char) sequence
+    // that appears in the bytecode. We log a warning but still try to deploy.
+    // You can copy the real hash above and add it to KNOWN_PLACEHOLDERS.
+    console.warn(
+      "\n⚠️  WARNING: Could not find a known INIT_CODE_HASH placeholder in Router bytecode."
+    );
+    console.warn(
+      "   The router may have been compiled with the correct hash already,"
+    );
+    console.warn(
+      "   or the placeholder differs. Deploying as-is and verifying post-deploy.\n"
+    );
+  }
+
+  /* ============================================================
+     4. Deploy Uniswap Router02 (with patched bytecode)
+  ============================================================ */
+  // Build a ContractFactory using the (potentially patched) bytecode
+  // but the original ABI, then deploy normally.
+  const PatchedRouter = new ethers.ContractFactory(
+    Router.interface,
+    routerBytecode,
+    deployer
+  );
+
+  const router = await PatchedRouter.deploy(FACTORY_ADDR, WETH_ADDR);
   await router.waitForDeployment();
   const ROUTER_ADDR = await router.getAddress();
   console.log("Router deployed:        ", ROUTER_ADDR);
+
+  // ── Sanity check: getAmountsOut on a fake path just to confirm
+  //    library routing works (will fail at pair lookup, not at hash level)
+  // We do a real verification after the pair is created (step 11.5).
 
   /* ============================================================
      5. Deploy MMM Token
@@ -95,17 +158,14 @@ async function main() {
 
   /* ============================================================
      7. Deploy RewardVault
-     Note: owner starts as deployer so we can wire BoostNFT and
-     exclusions first, then transfer ownership to TaxVault so it
-     can call notifyRewardAmount() during tax processing.
   ============================================================ */
   const RewardVault = await ethers.getContractFactory("RewardVault");
   const rewardVault = await RewardVault.deploy(
     MMM_ADDR,
-    7 * 24 * 3600,                        // 7 day min hold
-    24 * 3600,                             // 24h claim cooldown
-    ethers.parseUnits("1000", 18),         // 1000 MMM min balance
-    deployer.address                       // owner = deployer FIRST
+    7 * 24 * 3600,
+    24 * 3600,
+    ethers.parseUnits("1000", 18),
+    deployer.address
   );
   await rewardVault.waitForDeployment();
   const REWARDVAULT_ADDR = await rewardVault.getAddress();
@@ -146,6 +206,35 @@ async function main() {
   console.log("Pair created:           ", PAIR_ADDR);
 
   /* ============================================================
+     11.5. Verify the hash patch worked — getAmountsOut must succeed
+  ============================================================ */
+  console.log("\nVerifying INIT_CODE_HASH patch...");
+  const ROUTER_ABI = [
+    "function getAmountsOut(uint256,address[]) view returns (uint256[])",
+  ];
+  const routerView = new ethers.Contract(ROUTER_ADDR, ROUTER_ABI, deployer);
+  try {
+    const amounts = await routerView.getAmountsOut(
+      ethers.parseEther("1"),
+      [WETH_ADDR, MMM_ADDR]
+    );
+    console.log(
+      "✅ getAmountsOut works! 1 WMON →",
+      ethers.formatUnits(amounts[1], 18),
+      "MMM"
+    );
+  } catch (e) {
+    console.error("\n❌ getAmountsOut FAILED — INIT_CODE_HASH patch did not work.");
+    console.error("   Real hash (no 0x):", realHashHex);
+    console.error(
+      "   Open your UniswapV2Library.sol, find the hardcoded hex hash,\n" +
+      "   and add it to KNOWN_PLACEHOLDERS in this deploy script.\n" +
+      "   Then recompile (npx hardhat compile) and re-run."
+    );
+    process.exit(1);
+  }
+
+  /* ============================================================
      12. Wire MMM Token
   ============================================================ */
   await (await mmm.setPair(PAIR_ADDR)).wait();
@@ -176,9 +265,6 @@ async function main() {
 
   /* ============================================================
      15. Wire RewardVault
-         - Set BoostNFT
-         - Exclude all protocol addresses from eligible supply
-         - Transfer ownership to TaxVault last
   ============================================================ */
   await (await rewardVault.setBoostNFT(BOOSTNFT_ADDR)).wait();
   console.log("RewardVault: BoostNFT set.");
@@ -188,7 +274,6 @@ async function main() {
   await (await rewardVault.addExcludedRewardAddress(deployer.address)).wait();
   console.log("RewardVault: exclusions set.");
 
-  // Transfer ownership to TaxVault so it can call notifyRewardAmount()
   await (await rewardVault.transferOwnership(TAXVAULT_ADDR)).wait();
   console.log("RewardVault: ownership transferred to TaxVault.");
 
@@ -196,21 +281,18 @@ async function main() {
      16. Add Initial Liquidity – Manual seed (bypasses router)
          Monad testnet gas estimator is broken for addLiquidityETH
   ============================================================ */
-  const amountMMM = ethers.parseUnits("10000", 18);
-  const amountETH = ethers.parseEther("10");
+  const amountMMM = ethers.parseUnits("2000", 18);
+  const amountETH = ethers.parseEther("2");
 
   const pair = await ethers.getContractAt("UniswapV2Pair", PAIR_ADDR);
 
-  // Transfer MMM directly to pair (deployer is tax exempt, no trading lock)
   await (await mmm.transfer(PAIR_ADDR, amountMMM)).wait();
 
-  // Wrap MON -> WMON and send to pair
   await (await weth.deposit({ value: amountETH })).wait();
   await (await weth.transfer(PAIR_ADDR, amountETH)).wait();
 
-  // Mint LP tokens
   await (await pair.mint(deployer.address, { gasLimit: 300000 })).wait();
-  console.log("Liquidity seeded: 1000 MMM + 1 WMON.");
+  console.log("Liquidity seeded: 10000 MMM + 10 WMON.");
 
   /* ============================================================
      17. Launch Token
@@ -226,24 +308,22 @@ async function main() {
   console.log("================================================");
   console.log("TESTNET_WMON:             ", WETH_ADDR);
   console.log("TESTNET_USDC:             ", USDC_ADDR);
-  console.log("TESTNET_Factory:          ", FACTORY_ADDR);
-  console.log("TESTNET_Router:           ", ROUTER_ADDR);
+  console.log("TESTNET_FACTORY:          ", FACTORY_ADDR);
+  console.log("TESTNET_ROUTER:           ", ROUTER_ADDR);
   console.log("TESTNET_MMM:              ", MMM_ADDR);
-  console.log("TESTNET_Pair:             ", PAIR_ADDR);
-  console.log("TESTNET_TaxVault:         ", TAXVAULT_ADDR);
-  console.log("TESTNET_RewardVault:      ", REWARDVAULT_ADDR);
-  console.log("TESTNET_MarketingVault:   ", MARKETINGVAULT_ADDR);
-  console.log("TESTNET_TeamVestingVault: ", TEAMVESTINGVAULT_ADDR);
-  console.log("TESTNET_BoostNFT:         ", BOOSTNFT_ADDR);
+  console.log("TESTNET_PAIR:             ", PAIR_ADDR);
+  console.log("TESTNET_TAX_VAULT:        ", TAXVAULT_ADDR);
+  console.log("TESTNET_REWARD_VAULT:     ", REWARDVAULT_ADDR);
+  console.log("TESTNET_MARKETING_VAULT:  ", MARKETINGVAULT_ADDR);
+  console.log("TESTNET_TEAM_VAULT:       ", TEAMVESTINGVAULT_ADDR);
+  console.log("TESTNET_BOOST_NFT:        ", BOOSTNFT_ADDR);
+  console.log("INIT_CODE_HASH:           ", realInitCodeHash);
   console.log("================================================");
   console.log("\n⚠️  POST-DEPLOY CHECKLIST:");
   console.log("1. Update your .env with all addresses above.");
   console.log("2. Set TESTNET_MULTISIG_2 and TESTNET_MULTISIG_3 in .env");
   console.log("   for proper 2-of-3 multisig on Marketing/TeamVesting vaults.");
   console.log("3. RewardVault ownership transferred to TaxVault.");
-  console.log("4. To exclude malicious addresses from rewards later, add");
-  console.log("   excludeFromRewards(address) to TaxVault.sol and call it");
-  console.log("   as owner — see previous discussion.");
   console.log("================================================");
 }
 

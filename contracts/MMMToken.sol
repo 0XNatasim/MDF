@@ -161,9 +161,7 @@ contract MMMToken is ERC20, Ownable {
 
     function _update(address from, address to, uint256 amount) internal override {
 
-        // ------------------------------------------------------------
         // Mint / Burn
-        // ------------------------------------------------------------
         if (from == address(0) || to == address(0)) {
             super._update(from, to, amount);
             _syncLastNonZero(from);
@@ -171,18 +169,13 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        // ------------------------------------------------------------
-        // Trading Lock
-        // ------------------------------------------------------------
+        // Trading lock
         if (!tradingEnabled) {
             if (!isTaxExempt[from] && !isTaxExempt[to]) {
                 revert TradingNotEnabled();
             }
         }
 
-        // ------------------------------------------------------------
-        // Tax Conditions
-        // ------------------------------------------------------------
         bool isBuyTx  = (from == pair);
         bool isSellTx = (to == pair);
 
@@ -213,17 +206,17 @@ contract MMMToken is ERC20, Ownable {
         }
 
         uint256 tax = (amount * taxBps) / BPS;
-        uint256 net = amount - tax;
 
         // ------------------------------------------------------------
-        // BUY  (pair → buyer)
+        // BUY (pair → buyer)
+        // CRITICAL: DO NOT reduce amount leaving pair
         // ------------------------------------------------------------
         if (isBuyTx) {
-            // Pair sends net to buyer
-            super._update(from, to, net);
+            // 1️⃣ Pair sends full amount to buyer
+            super._update(from, to, amount);
 
-            // Pair sends tax to vault
-            super._update(from, taxVault, tax);
+            // 2️⃣ Buyer pays tax to vault
+            super._update(to, taxVault, tax);
 
             _syncLastNonZero(to);
             _syncLastNonZero(taxVault);
@@ -234,15 +227,20 @@ contract MMMToken is ERC20, Ownable {
         // SELL (seller → pair)
         // ------------------------------------------------------------
         if (isSellTx) {
-            // Seller pays tax first
+            // Seller pays tax
             super._update(from, taxVault, tax);
 
             // Net goes to pair
-            super._update(from, to, net);
+            super._update(from, to, amount - tax);
 
             _syncLastNonZero(from);
             _syncLastNonZero(taxVault);
             return;
         }
+
+        // Fallback (should never hit for AMM)
+        super._update(from, to, amount);
+        _syncLastNonZero(from);
+        _syncLastNonZero(to);
     }
 }

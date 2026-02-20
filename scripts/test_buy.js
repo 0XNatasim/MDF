@@ -65,8 +65,6 @@ async function main() {
   const wmonBalanceInPair = await weth.balanceOf(pairAddr);
   console.log("WMON balance in pair:", ethers.formatUnits(wmonBalanceInPair, 18));
 
-  console.log("isBuy(pair, fresh)?", await mmm.isBuy(pairAddr, fresh.address));
-  console.log("isSell(fresh, pair)?", await mmm.isSell(fresh.address, pairAddr));
 
   const tokenRouter = await mmm.router();
   console.log("Token's router:", tokenRouter);
@@ -83,7 +81,10 @@ async function main() {
   // -----------------------------------------------------------------
   // 4. Swap parameters
   // -----------------------------------------------------------------
-  const path = [WETH_ADDR, MMM_ADDR];
+  const path = [
+    process.env.TESTNET_WMON,
+    process.env.TESTNET_MMM
+  ];
   const deadline = Math.floor(Date.now() / 1000) + 1200;
   const buyAmount = ethers.parseEther("0.01");
 
@@ -107,6 +108,12 @@ async function main() {
     console.log("Gas estimation failed, using fallback of 2,000,000 gas.");
     gasLimit = 2_000_000;
   }
+
+
+  console.log("WMON:", process.env.TESTNET_WMON);
+  console.log("MMM:", process.env.TESTNET_MMM);
+  console.log("PATH:", path);
+  
 
   // -----------------------------------------------------------------
   // 6. Execute the swap
