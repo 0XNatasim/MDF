@@ -24,10 +24,8 @@ rewardVault: "0x16014Af57cB036762969D07678f57A673b0c8580",
 taxVault: "0x89DfC58aB3da4937C9a8dDec2Ab87cb49dF1eFfE",
 router: "0x3ac0d8EDd13e8030B1fBc470C4e28a07D209068e",
 pair: "0x425d3382BEc9b1b293554f42dD993CBd390B6394",
-wmon: "0xdb595Fc88D176aAe8Ae64c54bB50F815E3982825",
-
-
-  
+wmon:        "0xdb595Fc88D176aAe8Ae64c54bB50F815E3982825",
+  tracker:     "0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED",
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
@@ -349,9 +347,9 @@ async function initReadSide() {
 
   try {
     EFFECTIVE_WMON = CONFIG.wmon;
+    pairAddress = CONFIG.pair;
     wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
     pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
-    pairAddress = CONFIG.pair;  // add pair to CONFIG
   } catch (e) {
     console.warn("Could not read factory from router:", e);
   }
@@ -773,6 +771,7 @@ async function quoteOutFromReserves(amountIn, tokenIn, tokenOut) {
 ========================= */
 function updateKPIs() {
   setText("kpiTaxes", formatMMM(protocolSnapshot.taxesMMM));
+  setText("kpiTrackerMon", formatMon(protocolSnapshot.rewardVaultMon));
 
   const price = protocolSnapshot.mmmPerMon;
   if (price !== null && price > 0) {
@@ -1486,12 +1485,12 @@ async function refreshAll() {
       ethers.formatUnits(taxesRaw, connectedSnapshot.decimals)
     );
 
-    const rewardVaultMonRaw = await readProvider
-      .getBalance(CONFIG.rewardVault)
+    const trackerMonRaw = await readProvider
+      .getBalance(CONFIG.tracker)
       .catch(() => 0n);
 
     protocolSnapshot.rewardVaultMon = Number(
-      ethers.formatEther(rewardVaultMonRaw)
+      ethers.formatEther(trackerMonRaw)
     );
 
     protocolSnapshot.mmmPerMon = await quoteMmmPerMon(
@@ -1590,12 +1589,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
 
-  if (poolLink) {
-    poolLink.textContent = pairAddress || "—";
-    if (pairAddress) {
-      poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
-    }
+  const trackerLink = $("trackerLink");
+  if (trackerLink) {
+    trackerLink.textContent = CONFIG.tracker;
+    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
   }
+
+  // poolLink is set AFTER initReadSide (further below) so pairAddress is populated
 
   initWatchedSlider();
   loadData();
