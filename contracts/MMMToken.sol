@@ -61,7 +61,6 @@ contract MMMToken is ERC20, Ownable {
         if (owner_ == address(0)) revert ZeroAddress();
 
         _mint(owner_, initialSupply);
-
         isTaxExempt[owner_] = true;
 
         if (initialSupply > 0) {
@@ -113,19 +112,7 @@ contract MMMToken is ERC20, Ownable {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        BUY / SELL DETECTION
-    //////////////////////////////////////////////////////////////*/
-
-    function isBuy(address from, address to) public view returns (bool) {
-        return from == pair && to != address(0);
-    }
-
-    function isSell(address from, address to) public view returns (bool) {
-        return to == pair && from != address(0);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                            TAX DECAY MODEL
+                        TAX DECAY MODEL
     //////////////////////////////////////////////////////////////*/
 
     function getBuyTaxBps() public view returns (uint256) {
@@ -169,13 +156,13 @@ contract MMMToken is ERC20, Ownable {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    OZ v5 TRANSFER HOOK
+                        TRANSFER LOGIC
     //////////////////////////////////////////////////////////////*/
 
     function _update(address from, address to, uint256 amount) internal override {
 
         // ------------------------------------------------------------
-        // Mint / Burn — no tax
+        // Mint / Burn
         // ------------------------------------------------------------
         if (from == address(0) || to == address(0)) {
             super._update(from, to, amount);
@@ -194,12 +181,16 @@ contract MMMToken is ERC20, Ownable {
         }
 
         // ------------------------------------------------------------
-        // Should We Take Tax?
+        // Tax Conditions
         // ------------------------------------------------------------
+        bool isBuyTx  = (from == pair);
+        bool isSellTx = (to == pair);
+
         bool takeTax =
             launched &&
             taxVault != address(0) &&
             pair != address(0) &&
+            (isBuyTx || isSellTx) &&
             !isTaxExempt[from] &&
             !isTaxExempt[to];
 
@@ -210,13 +201,9 @@ contract MMMToken is ERC20, Ownable {
             return;
         }
 
-        bool isBuyTx = from == pair;
-        bool isSellTx = to == pair;
-
-        uint256 taxBps =
-            isBuyTx  ? getBuyTaxBps() :
-            isSellTx ? getSellTaxBps() :
-            0;
+        uint256 taxBps = isBuyTx
+            ? getBuyTaxBps()
+            : getSellTaxBps();
 
         if (taxBps == 0) {
             super._update(from, to, amount);
@@ -226,13 +213,17 @@ contract MMMToken is ERC20, Ownable {
         }
 
         uint256 tax = (amount * taxBps) / BPS;
+        uint256 net = amount - tax;
 
         // ------------------------------------------------------------
         // BUY  (pair → buyer)
         // ------------------------------------------------------------
         if (isBuyTx) {
+            // Pair sends net to buyer
+            super._update(from, to, net);
+
+            // Pair sends tax to vault
             super._update(from, taxVault, tax);
-            super._update(from, to, amount - tax);
 
             _syncLastNonZero(to);
             _syncLastNonZero(taxVault);
@@ -243,19 +234,15 @@ contract MMMToken is ERC20, Ownable {
         // SELL (seller → pair)
         // ------------------------------------------------------------
         if (isSellTx) {
+            // Seller pays tax first
             super._update(from, taxVault, tax);
-            super._update(from, to, amount - tax);
+
+            // Net goes to pair
+            super._update(from, to, net);
 
             _syncLastNonZero(from);
             _syncLastNonZero(taxVault);
             return;
         }
-
-        // ------------------------------------------------------------
-        // Wallet → Wallet
-        // ------------------------------------------------------------
-        super._update(from, to, amount);
-        _syncLastNonZero(from);
-        _syncLastNonZero(to);
     }
 }
