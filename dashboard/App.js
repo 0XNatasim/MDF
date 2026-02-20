@@ -246,18 +246,7 @@ async function loadVaultParams() {
   );
 }
 
-async function refreshAll() {
-  if (refreshInFlight) return;
-  refreshInFlight = true;
 
-  try {
-    // existing refreshAll body
-  } finally {
-    setTimeout(() => {
-      refreshInFlight = false;
-    }, 1500); // 1.5s cooldown
-  }
-}
 
 
 /* =========================
@@ -1471,6 +1460,9 @@ async function execSwap() {
    Refresh
 ========================= */
 async function refreshAll() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+
   try {
     showLoading("Refreshing on-chain data…");
 
@@ -1512,6 +1504,8 @@ async function refreshAll() {
   } catch (e) {
     hideLoading();
     uiError(`Refresh failed: ${e?.message || e}`, e);
+  } finally {
+    setTimeout(() => { refreshInFlight = false; }, 1500);
   }
 }
 
