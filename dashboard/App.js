@@ -1337,6 +1337,15 @@ async function execSwap() {
 
     if (amountIn <= 0) return uiError("Enter a valid amount.");
 
+    // ✅ Re-acquire here — after all guards, before any tx
+    signer = await browserProvider.getSigner();
+    routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
+    wmonWrite   = new ethers.Contract(CONFIG.wmon, WMON_ABI, signer);
+    tokenWrite  = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
+
+
+
+
     const slippageBps = Math.floor(slippagePct * 100);
     const deadline = Math.floor(Date.now() / 1000) + 1200;
     const to = connectedAddress;
