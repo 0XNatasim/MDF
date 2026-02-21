@@ -1359,13 +1359,18 @@ async function execSwap() {
       const path  = [CONFIG.wmon, CONFIG.mmmToken];
       const decimals = MMM_DECIMALS;
 
-      // Quote expected MMM out from reserves, then apply slippage
+      // Quote expected MMM out from reserves.
+      // MMM has a buy tax (taken AFTER pair transfer, from buyer).
+      // swapExactETHForTokensSupportingFeeOnTransferTokens checks received amount,
+      // so minOut must be BELOW the pre-tax quote by at least the tax amount.
+      // We apply: slippage + 6% tax buffer (covers up to launch-time 8% decay tax).
       let minOut = 0n;
       try {
         const expectedOut = await quoteOutFromReserves(value, CONFIG.wmon, CONFIG.mmmToken);
-        minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
+        // Tax buffer: 600 bps (6%) + user slippage
+        const totalDeductBps = BigInt(slippageBps) + 600n;
+        minOut = expectedOut - (expectedOut * totalDeductBps) / 10_000n;
       } catch (_) {
-        // If quote fails, use 0 minOut (rely entirely on slippage protection being disabled)
         minOut = 0n;
       }
 
@@ -1418,8 +1423,19 @@ async function execSwap() {
     }
 
     const path = [CONFIG.mmmToken, CONFIG.wmon];
-    const expectedOut = amountInBn;
-    const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
+
+    // Quote real WMON out from reserves.
+    // Sell tax is taken before MMM hits pair, so net MMM = amountIn - tax.
+    // We quote on the net amount, then apply slippage on top.
+    let minOut = 0n;
+    try {
+      const sellTaxBps = 500n; // steady-state 5%; conservative for UI
+      const netMmmToPair = amountInBn - (amountInBn * sellTaxBps) / 10_000n;
+      const expectedWmonOut = await quoteOutFromReserves(netMmmToPair, CONFIG.mmmToken, CONFIG.wmon);
+      minOut = expectedWmonOut - (expectedWmonOut * BigInt(slippageBps)) / 10_000n;
+    } catch (_) {
+      minOut = 0n;
+    }
 
     showLoading("Swapping MMM → WMON...");
     const swapTx = await routerWrite.swapExactTokensForTokensSupportingFeeOnTransferTokens(
