@@ -25,7 +25,7 @@ taxVault: "0x89DfC58aB3da4937C9a8dDec2Ab87cb49dF1eFfE",
 router: "0x3ac0d8EDd13e8030B1fBc470C4e28a07D209068e",
 pair: "0x425d3382BEc9b1b293554f42dD993CBd390B6394",
 wmon:        "0xdb595Fc88D176aAe8Ae64c54bB50F815E3982825",
-reward:     "0x16014Af57cB036762969D07678f57A673b0c8580",
+
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
@@ -1515,7 +1515,7 @@ async function refreshAll() {
     );
 
     const trackerMonRaw = await readProvider
-      .getBalance(CONFIG.tracker)
+      .getBalance(CONFIG.RewardVault)
       .catch(() => 0n);
 
     protocolSnapshot.rewardVaultMon = Number(
@@ -1628,10 +1628,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
 
-  const trackerLink = $("trackerLink");
-  if (trackerLink) {
-    trackerLink.textContent = CONFIG.tracker;
-    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
+  const RewardVaultLink = $("RewardVaultLink");
+  if (RewardVaultLink) {
+    RewardVaultLink.textContent = CONFIG.RewardVault;
+    RewardVaultLink.href = `${CONFIG.explorerBase}/address/${CONFIG.RewardVault}`;
   }
 
   // poolLink is set AFTER initReadSide (further below) so pairAddress is populated
