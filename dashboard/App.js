@@ -1438,6 +1438,8 @@ async function execSwap() {
       return uiError("Insufficient allowance. Click 'Approve MMM' first.");
     }
 
+    const path = [CONFIG.mmmToken, CONFIG.wmon];
+
     const taxedAmountIn = amountInBn - (amountInBn * 500n) / 10_000n; // 5% tax
     let minOut = 0n;
     try {
