@@ -1400,7 +1400,8 @@ async function execSwap() {
 
 
     const slippageBps = Math.floor(slippagePct * 100);
-    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+
     const to = connectedAddress;
 
     showLoading("Preparing swap…");
