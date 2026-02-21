@@ -53,34 +53,27 @@ body {
   margin: 0 auto;
 }
 
-/* Mobile topbar: hide disconnect text, keep icon only */
+/* Mobile topbar */
 @media (max-width: 600px) {
   .container {
     width: min(var(--max), calc(100% - 20px));
   }
 
-  #disconnectBtn .fa-right-from-bracket ~ * ,
-  #disconnectBtn {
-    /* show icon only */
-  }
-
+  /* icon-only disconnect on small screens */
   #disconnectBtn {
     padding: 9px 10px;
     gap: 0;
-    font-size: 0; /* hide text */
+    font-size: 0;
   }
-
-  #disconnectBtn i {
-    font-size: 14px;
-  }
+  #disconnectBtn i { font-size: 14px; }
 
   #connectBtn {
     padding: 9px 12px;
     font-size: 12px;
   }
 
-  .brand__title { display: none; }
-  .brand__subtitle { display: none; }
+  .brand__title   { display: none; }
+  .brand__subtitle{ display: none; }
 }
 
 /* Topbar */
@@ -232,16 +225,17 @@ body {
   color: rgba(255,255,255,0.82);
 }
 
-/* KPI stats */
+/* KPI stats — mobile-first, all single column */
 .stats {
   display: grid;
   gap: 12px;
-  margin: 10px 0 18px;
+  margin: 0;
 }
 
-.stats--4 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-.stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.stats--3 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+/* desktop overrides are in the @media (min-width: 1024px) block below */
+.stats--4,
+.stats--3,
+.stats--2 { grid-template-columns: 1fr; }
 
 .stat {
   background: rgba(255,255,255,0.05);
@@ -441,7 +435,8 @@ body {
   background: rgba(255,255,255,0.04);
 }
 
-.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+/* chips: 2-col mobile-first; 4-col on tablet+ (set in media query below) */
+.chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .chip {
   padding: 10px 8px;
   border-radius: 14px;
@@ -484,14 +479,16 @@ body {
   position: relative;
   overflow: hidden;
   padding: 0;
-  flex-shrink: 0; /* Prevent slider from shrinking */
+  border-radius: var(--radius);
+  background: rgba(0,0,0,0.25);
 }
 .watched-slide {
   display: none;
   width: 100%;
   height: auto;
-  max-height: 400px;
-  object-fit: contain; /* Maintain aspect ratio */
+  object-fit: cover;
+  border-radius: var(--radius);
+  aspect-ratio: 1 / 1; /* square crop — change to 4/3 or 16/9 if images differ */
 }
 .watched-slide.is-active { display: block; }
 .watched-dots {
@@ -593,73 +590,100 @@ body {
 
 .loading__text { color: rgba(255,255,255,0.86); font-weight: 700; }
 
-/* =========================
-   NEW DASH GRID (replaces old .layout usage)
-   Row 1: meta full width
-   Right rail: slider (sticky) + watched wallets under
-========================= */
+/* ==========================================================
+   DASH GRID
+   Mobile:  single column, slider appears between meta and KPIs
+   Tablet:  ~768px — stats go 2-col, ops still stacked
+   Desktop: ~1024px — two-column layout with sticky right rail
+========================================================== */
 
-.dash-grid{
-  display: grid;
+/* ── Shared structure ── */
+.dash-grid {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+  padding-bottom: 48px;
+}
+
+.dash-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  order: 2; /* on mobile: appears below the slider/right rail */
+}
+
+.dash-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  order: 1; /* on mobile: slider + watched wallets appear first */
+}
+
+/* Ops (swap + send) — stacked by default */
+.ops {
+  display: grid;
+  gap: 14px;
   grid-template-columns: 1fr;
-  padding-bottom: 36px;
 }
 
-.dash-left{
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* remove the default .stats vertical margins inside dash-left */
-.dash-left .stats { margin: 0; }
-
-.dash-right{
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  align-self: start;
-}
-
-/* Desktop */
-@media (min-width: 980px) {
-  .dash-grid{
-    grid-template-columns: 1fr 0.55fr;
-    align-items: start;
-  }
-
-  .ops { grid-template-columns: 1fr 1fr; }
-  .stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* ── Tablet: 680px+ ── */
+@media (min-width: 680px) {
   .stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chips    { grid-template-columns: repeat(4, 1fr); }
+}
 
-  /* slider stays above watched wallets in normal flow */
-  #watchedSlider.watched-slider{
-    position: relative;
-    max-height: 400px; /* Limit slider height */
-    overflow: hidden;
+/* ── Desktop: 1024px+ — two column layout ── */
+@media (min-width: 1024px) {
+  .dash-grid {
+    display: grid;
+    /* left col takes the space it needs; right rail is fixed 340px */
+    grid-template-columns: 1fr 340px;
+    align-items: start;
+    gap: 20px;
   }
-  
-  /* Ensure watched wallets panel stays below slider */
-  .dash-right .panel {
-    position: relative;
-    z-index: 1;
+
+  /* reset mobile order — grid placement handles columns */
+  .dash-left  { order: unset; }
+  .dash-right { order: unset; }
+
+  .dash-right {
+    /* Stick the right rail so it stays visible while left col scrolls */
+    position: sticky;
+    top: 72px; /* topbar height + 8px breathing room */
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+    scrollbar-width: none; /* Firefox */
+  }
+  .dash-right::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+  /* Ops side-by-side only when left col is wide enough */
+  .ops { grid-template-columns: 1fr 1fr; }
+
+  /* Stats grids */
+  .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* Slider: fixed height, images fill it */
+  #watchedSlider.watched-slider {
+    max-height: 340px;
+  }
+  #watchedSlider.watched-slider .watched-slide {
+    max-height: 340px;
+    aspect-ratio: unset;
+    object-fit: cover;
   }
 }
 
-/* Mobile / tablets */
-@media (max-width: 980px) {
-  .chips { grid-template-columns: repeat(2, 1fr); }
-  .btn-row { grid-template-columns: 1fr; }
-  .table { min-width: 420px; }
+/* ── Narrow mobile (<480px) ── */
+@media (max-width: 479px) {
+  /* btn-row: keep 2 cols so Approve + Swap sit side-by-side */
+  .btn-row { grid-template-columns: 1fr 1fr; }
 
-  #watchedSlider.watched-slider{
-    position: static;
-  }
+  /* table: let it scroll horizontally */
+  .table { min-width: 360px; }
 }
 
-/* Pool reserves row: 2 cols desktop, 1 col small */
-@media (max-width: 768px) {
-  .stats--2 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-}
+/* Scrollable table wrapper always clips overflow */
+.table-wrap { overflow-x: auto; }
