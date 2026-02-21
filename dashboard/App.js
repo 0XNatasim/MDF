@@ -803,7 +803,18 @@ async function renderConnectedCard() {
   }
 
   const eligibility = await getWalletEligibility(connectedAddress);
-  if (!eligibility) return; // or `continue` in a loop
+  if (!eligibility) {
+    // RPC throttle / transient failure — preserve last-good render if present
+    if (!container.innerHTML.trim()) {
+      container.innerHTML = `
+        <div class="wallet-card">
+          <div style="padding:8px 0; color:rgba(255,255,255,0.55); font-size:13px;">
+            <i class="fas fa-circle-notch fa-spin"></i> Loading wallet data…
+          </div>
+        </div>`;
+    }
+    return;
+  }
 
 
   const holdText =
@@ -894,7 +905,28 @@ async function renderWallets() {
 
   for (const w of wallets) {
     const eligibility = await getWalletEligibility(w.address);
-    if (!eligibility) continue;
+    if (!eligibility) {
+      // Transient RPC failure — render a skeleton card so the wallet doesn't vanish
+      html += `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <div class="wallet-mark">${escapeHtml(w.name.charAt(0).toUpperCase())}</div>
+              <div style="min-width:0;">
+                <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+                <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
+              </div>
+            </div>
+            <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+          <div style="padding:8px 0; color:rgba(255,255,255,0.45); font-size:12px;">
+            <i class="fas fa-circle-notch fa-spin"></i> Fetching data…
+          </div>
+        </div>`;
+      continue;
+    }
 
 
     const holdText =
