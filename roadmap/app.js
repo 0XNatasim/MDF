@@ -1,46 +1,74 @@
-// MMM One-Pager interactions:
+// ============================================================
+// MMM Roadmap UI Logic
 // - Mobile nav toggle
-// - Smooth scroll
+// - Smooth scroll with offset
 // - Scrollspy (active section highlight)
+// - Reveal animations
+// ============================================================
+
+/* ============================================================
+   NAV ELEMENTS
+============================================================ */
 
 const nav = document.getElementById("nav");
+const navLinks = Array.from(document.querySelectorAll(".nav-link"));
+const topbar = document.querySelector(".topbar");
+
+/* ============================================================
+   MOBILE NAV TOGGLE (future-proofed)
+   If you add a toggle button later, this is ready.
+============================================================ */
+
 const navToggle = document.getElementById("navToggle");
-const navLinks = Array.from(document.querySelectorAll(".nav__link"));
 
 function setExpanded(isOpen) {
+  if (!navToggle || !nav) return;
+
   navToggle.setAttribute("aria-expanded", String(isOpen));
   nav.classList.toggle("open", isOpen);
 }
 
-navToggle?.addEventListener("click", () => {
-  const isOpen = nav.classList.contains("open");
-  setExpanded(!isOpen);
-});
+if (navToggle) {
+  navToggle.addEventListener("click", () => {
+    const isOpen = nav.classList.contains("open");
+    setExpanded(!isOpen);
+  });
+}
 
-// Close nav after clicking a link (mobile)
-navLinks.forEach((a) => {
-  a.addEventListener("click", () => {
+// Close nav after clicking a link (mobile behavior)
+navLinks.forEach((link) => {
+  link.addEventListener("click", () => {
     setExpanded(false);
   });
 });
 
-// Smooth scroll (respect reduced motion)
-const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+/* ============================================================
+   SMOOTH SCROLL
+============================================================ */
 
-navLinks.forEach((a) => {
-  a.addEventListener("click", (e) => {
-    const href = a.getAttribute("href") || "";
-    if (!href.startsWith("#")) return;
+const prefersReducedMotion = window.matchMedia(
+  "(prefers-reduced-motion: reduce)"
+).matches;
+
+function getHeaderOffset() {
+  if (!topbar) return 0;
+  return topbar.getBoundingClientRect().height + 10;
+}
+
+navLinks.forEach((link) => {
+  link.addEventListener("click", (e) => {
+    const href = link.getAttribute("href");
+    if (!href || !href.startsWith("#")) return;
 
     const target = document.querySelector(href);
     if (!target) return;
 
     e.preventDefault();
 
-    const topbar = document.querySelector(".topbar");
-    const offset = (topbar?.getBoundingClientRect().height || 0) + 10;
-
-    const y = target.getBoundingClientRect().top + window.scrollY - offset;
+    const y =
+      target.getBoundingClientRect().top +
+      window.scrollY -
+      getHeaderOffset();
 
     window.scrollTo({
       top: y,
@@ -51,79 +79,79 @@ navLinks.forEach((a) => {
   });
 });
 
-// Scrollspy - Updated with new section IDs
-const sectionIds = navLinks
-  .map((a) => a.getAttribute("href"))
-  .filter((h) => h && h.startsWith("#"))
-  .map((h) => h.substring(1));
+/* ============================================================
+   SCROLLSPY (ACTIVE NAV HIGHLIGHT)
+============================================================ */
 
-const sections = sectionIds
-  .map((id) => document.getElementById(id))
-  .filter((section) => section !== null);
+const sections = navLinks
+  .map((link) => link.getAttribute("href"))
+  .filter((href) => href && href.startsWith("#"))
+  .map((id) => document.querySelector(id))
+  .filter(Boolean);
 
 function updateActiveNavLink() {
-  const scrollY = window.scrollY + 100; // Offset for better UX
+  if (!sections.length) return;
 
-  let currentSectionId = "";
-  
-  sections.forEach((section) => {
-    const sectionTop = section.offsetTop;
-    const sectionHeight = section.offsetHeight;
-    
-    if (scrollY >= sectionTop && scrollY < sectionTop + sectionHeight) {
-      currentSectionId = section.id;
+  const scrollPosition = window.scrollY + getHeaderOffset() + 20;
+
+  let currentSection = sections[0];
+
+  for (const section of sections) {
+    if (
+      scrollPosition >= section.offsetTop &&
+      scrollPosition < section.offsetTop + section.offsetHeight
+    ) {
+      currentSection = section;
+      break;
     }
-  });
-
-  // If we're at the very top, default to first section
-  if (scrollY < sections[0]?.offsetTop) {
-    currentSectionId = sections[0]?.id || "";
   }
 
   navLinks.forEach((link) => {
-    const href = link.getAttribute("href") || "";
-    const isActive = href === `#${currentSectionId}`;
-    
+    const href = link.getAttribute("href");
+    const isActive = href === `#${currentSection.id}`;
+
     link.classList.toggle("active", isActive);
     link.setAttribute("aria-current", isActive ? "page" : "false");
   });
 }
 
-// Initialize and update on scroll
-updateActiveNavLink();
 window.addEventListener("scroll", updateActiveNavLink);
 window.addEventListener("resize", updateActiveNavLink);
+updateActiveNavLink();
 
-// Add animation for allocation items on scroll
+/* ============================================================
+   INTERSECTION REVEAL ANIMATIONS
+============================================================ */
+
+const revealElements = document.querySelectorAll(".card, .panel");
+
 const observerOptions = {
-  threshold: 0.1,
-  rootMargin: "0px 0px -50px 0px"
+  threshold: 0.08,
+  rootMargin: "0px 0px -40px 0px",
 };
 
-const allocationObserver = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
     if (entry.isIntersecting) {
       entry.target.style.opacity = "1";
       entry.target.style.transform = "translateY(0)";
+      entry.target.style.transition =
+        "opacity 0.45s ease, transform 0.45s ease";
     }
   });
 }, observerOptions);
 
-// Observe allocation items
-document.querySelectorAll('.allocation-item').forEach(item => {
-  item.style.opacity = "0";
-  item.style.transform = "translateY(20px)";
-  item.style.transition = "opacity 0.5s ease, transform 0.5s ease";
-  allocationObserver.observe(item);
+revealElements.forEach((el) => {
+  el.style.opacity = "0";
+  el.style.transform = "translateY(18px)";
+  revealObserver.observe(el);
 });
 
-// Observe tax items
-document.querySelectorAll('.tax-item').forEach(item => {
-  item.style.opacity = "0";
-  item.style.transform = "scale(0.9)";
-  item.style.transition = "opacity 0.4s ease, transform 0.4s ease";
-  setTimeout(() => {
-    item.style.opacity = "1";
-    item.style.transform = "scale(1)";
-  }, 100);
+/* ============================================================
+   SAFETY: HANDLE EDGE CASES
+============================================================ */
+
+// Ensure no JS errors break the page silently
+window.addEventListener("error", (e) => {
+  console.error("MMM UI error:", e.message);
 });

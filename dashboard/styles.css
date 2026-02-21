@@ -295,9 +295,11 @@ body {
 .wallet-top {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
   margin-bottom: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .wallet-id {
@@ -305,6 +307,16 @@ body {
   gap: 12px;
   align-items: flex-start;
   min-width: 0;
+  /* critical: let text content shrink so long addresses don't push layout */
+  overflow: hidden;
+  flex: 1 1 0;
+}
+
+/* the text block next to the avatar mark must also shrink */
+.wallet-id > div {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 0;
 }
 
 .wallet-mark {
@@ -338,12 +350,16 @@ body {
 
 .wallet-addr {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(255,255,255,0.70);
-  display: inline-flex;
+  /* flex so the copy button aligns, but constrained to parent width */
+  display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  min-width: 0;
+  word-break: break-all;   /* break 0x... address mid-string */
+  overflow-wrap: anywhere;
 }
 
 .wallet-metrics { display: grid; gap: 12px; }

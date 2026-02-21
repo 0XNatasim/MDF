@@ -6,456 +6,321 @@
     <title>MMM — Monad Money Machine</title>
     <meta
       name="description"
-      content="MMM — Monad Money Machine. Uniswap V2 launch. v1 contracts: MMMToken + TaxVault + RewardVault. Locked deployment manifests + preflight/assert pipeline. Hold-time + cooldown + minBalance eligibility gates."
+      content="MMM — Modular DeFi protocol on Monad. Token + Vault architecture with deterministic deployment pipeline, multisig custody, and reward gating."
     />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
 
-    <!-- Keep your inline layout helpers (you had these in your older file) -->
-    <style>
-      .phase-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1.5rem;
-        margin: 2rem 0;
-      }
-      .phase-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 1.5rem;
-        transition: transform 0.2s ease;
-      }
-      .phase-card:hover {
-        transform: translateY(-4px);
-        border-color: var(--accent-primary);
-      }
-      .phase-card h4 {
-        color: var(--text-primary);
-        margin-bottom: 0.75rem;
-        font-size: 1.1rem;
-      }
-      .tier-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 999px;
-        font-size: 0.85rem;
-        font-weight: 700;
-        margin-right: 0.5rem;
-        margin-bottom: 0.5rem;
-        color: #0b1020;
-      }
-      .tier-diamond {
-        background: linear-gradient(135deg, #60a5fa, #3b82f6);
-      }
-      .tier-normal {
-        background: linear-gradient(135deg, #34d399, #10b981);
-      }
-      .tier-active {
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      }
-      .tier-gamer {
-        background: linear-gradient(135deg, #f87171, #ef4444);
-      }
-      .detection-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 1rem;
-        margin: 1.25rem 0 0;
-      }
-      .detection-item {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 1rem;
-      }
-      .detection-item strong {
-        display: block;
-        margin-bottom: 0.35rem;
-      }
-    </style>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./app.js"></script>
   </head>
 
   <body>
     <div class="bg-glow bg-glow-1"></div>
     <div class="bg-glow bg-glow-2"></div>
 
+    <!-- ===================================================== -->
+    <!-- TOPBAR -->
+    <!-- ===================================================== -->
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand">
           <div class="brand-mark">MMM</div>
-          <div class="brand-meta">
+          <div>
             <div class="brand-title">Monad Money Machine</div>
-            <div class="brand-subtitle">v1 locked deploy + manifest pipeline</div>
+            <div class="brand-subtitle">
+              Modular Token + Vault Architecture
+            </div>
           </div>
         </div>
 
-        <nav class="nav">
+        <nav class="nav" id="nav">
           <a class="nav-link" href="#overview">Overview</a>
-          <a class="nav-link" href="#v1">v1 Status</a>
-          <a class="nav-link" href="#mainnet">Mainnet</a>
+          <a class="nav-link" href="#architecture">Architecture</a>
+          <a class="nav-link" href="#status">Status</a>
           <a class="nav-link" href="#roadmap">Roadmap</a>
         </nav>
 
         <div class="topbar-cta">
-          <a class="btn btn-ghost" href="https://mdf-j931.onrender.com/" target="_blank" rel="noreferrer">
-            Live Roadmap
+          <a
+            class="btn btn-ghost"
+            href="https://mdf-j931.onrender.com/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Live Dashboard
           </a>
         </div>
       </div>
     </header>
 
     <main class="container">
-      <!-- HERO -->
+
+      <!-- ===================================================== -->
+      <!-- HERO / OVERVIEW -->
+      <!-- ===================================================== -->
       <section class="hero" id="overview">
         <div class="hero-inner">
           <div>
             <div class="badge-row">
-              <span class="badge badge-green">v1 contracts deployed (testnet)</span>
-              <span class="badge badge-blue">locked manifests</span>
-              <span class="badge badge-amber">mainnet router enforced</span>
+              <span class="badge badge-green">Testnet deployed</span>
+              <span class="badge badge-blue">Deterministic manifests</span>
+              <span class="badge badge-amber">DEX integrated</span>
             </div>
 
             <h1 class="hero-title">
-              MMM v1 is now a <span class="accent">locked deployment pipeline</span>:
-              deterministic deploy → manifest → preflight → assert.
+              MMM is a <span class="accent">modular DeFi protocol</span>
+              built for Monad.
             </h1>
 
             <p class="hero-lead">
-              We removed the “guessing” surface from deployments. v1 is now the minimal, audit-friendly core:
-              <strong>MMMToken</strong> (tax + pair/router wiring), <strong>TaxVault</strong> (custody + controlled sweep),
-              and <strong>RewardVault</strong> (hold-time + cooldown + minBalance claim gating).
+              The system combines a taxed ERC-20 token, custody vaults,
+              deterministic deployment manifests, reward gating logic,
+              multisig governance, and optional NFT-based reward boosts —
+              all designed for auditability and operational discipline.
             </p>
 
             <div class="hero-actions">
-              <a class="btn btn-primary" href="#v1">See v1 status</a>
-              <a class="btn btn-secondary" href="#mainnet">Mainnet readiness</a>
+              <a class="btn btn-primary" href="#architecture">
+                View Architecture
+              </a>
+              <a class="btn btn-secondary" href="#roadmap">
+                See Roadmap
+              </a>
             </div>
           </div>
 
           <div class="hero-card">
-            <div class="hero-card-title">Mainnet DEX Targets (Monad)</div>
+            <div class="hero-card-title">Core Modules</div>
             <div class="kv">
               <div class="kv-row">
-                <div class="kv-k">Chain ID</div>
-                <div class="kv-v">143</div>
+                <div class="kv-k">Token</div>
+                <div class="kv-v">MMMToken (buy/sell tax logic)</div>
               </div>
               <div class="kv-row">
-                <div class="kv-k">Uniswap V2 Factory</div>
-                <div class="kv-v mono">0x182a927119d56008d921126764bf884221b10f59</div>
+                <div class="kv-k">Custody</div>
+                <div class="kv-v">TaxVault + Multisig Vaults</div>
               </div>
               <div class="kv-row">
-                <div class="kv-k">Uniswap V2 Router</div>
-                <div class="kv-v mono">0x4b2ab38dbf28d31d467aa8993f6c2585981d6804</div>
+                <div class="kv-k">Rewards</div>
+                <div class="kv-v">RewardVault (hold-time + cooldown)</div>
               </div>
               <div class="kv-row">
-                <div class="kv-k">Wrapped MON</div>
-                <div class="kv-v mono">0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A</div>
+                <div class="kv-k">DEX Layer</div>
+                <div class="kv-v">SwapVault + UniswapV2 Router</div>
               </div>
-            </div>
-            <div class="hero-card-foot">
-              Router is optional on testnet; enforced on mainnet by the locked deploy scripts.
+              <div class="kv-row">
+                <div class="kv-k">Optional</div>
+                <div class="kv-v">BoostNFT reward multipliers</div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- V1 STATUS -->
-      <section class="section" id="v1">
+      <!-- ===================================================== -->
+      <!-- ARCHITECTURE -->
+      <!-- ===================================================== -->
+      <section class="section" id="architecture">
         <div class="section-head">
-          <h2>v1 Status (What’s actually implemented)</h2>
+          <h2>Protocol Architecture</h2>
           <p>
-            This reflects the last few days of work: the v1 contracts are deployed on Monad testnet and the pipeline is
-            locked with a manifest-first workflow.
+            Production deployment consists of independent modules with
+            strict ownership boundaries and one-time wiring flows.
           </p>
         </div>
 
         <div class="grid grid-3">
+
           <div class="card">
-            <div class="card-title">Contracts (v1 core)</div>
+            <div class="card-title">MMMToken</div>
             <ul class="checklist">
-              <li class="ok">MMMToken (tax logic + wiring setters)</li>
-              <li class="ok">TaxVault (custody, one-time RewardVault wiring, only RewardVault can sweep)</li>
-              <li class="ok">RewardVault (hold-time + cooldown + minBalance claim gating)</li>
-              <li class="ok">Excluded supply rule: eligibleSupply = totalSupply − Σ excludedRewardAddresses</li>
+              <li class="ok">Buy / sell tax enforcement</li>
+              <li class="ok">Router + pair wiring</li>
+              <li class="ok">Trading lock + launch control</li>
+              <li class="ok">Tax exemptions</li>
             </ul>
           </div>
 
           <div class="card">
-            <div class="card-title">Locked deployment pipeline</div>
+            <div class="card-title">TaxVault</div>
             <ul class="checklist">
-              <li class="ok">deploy-v1-locked (deterministic constructor, no guessing)</li>
-              <li class="ok">writes deployments/&lt;network&gt;/latest.json (manifest)</li>
-              <li class="ok">preflight-from-manifest (reads only manifest, not env)</li>
-              <li class="ok">assert-manifest (offline + on-chain checks)</li>
-              <li class="ok">stamp-manifest (pins bytecode hash + git commit)</li>
+              <li class="ok">Receives MMM tax</li>
+              <li class="ok">Controlled reward distribution</li>
+              <li class="ok">Wired once to other vaults</li>
             </ul>
           </div>
 
           <div class="card">
-            <div class="card-title">Testnet gating confirmed</div>
+            <div class="card-title">RewardVault</div>
             <ul class="checklist">
-              <li class="ok">minHoldTimeSec enforced (new entrant cannot claim)</li>
-              <li class="ok">minBalance enforced (below threshold cannot claim)</li>
-              <li class="ok">cooldown enforced (claim within cooldown reverts)</li>
-              <li class="ok">nothing-to-claim gate behaves correctly</li>
-              <li class="ok">live tests passing (except cooldown may be “UnknownRevert” depending on RPC)</li>
+              <li class="ok">Minimum hold time</li>
+              <li class="ok">Claim cooldown</li>
+              <li class="ok">Minimum balance requirement</li>
+              <li class="ok">Excluded supply rule</li>
             </ul>
           </div>
-        </div>
 
-        <div class="callout">
-          <div class="callout-title">What changed vs the “old” codebase</div>
-          <p>
-            The previous tracker/DEX infra experiments (custom router/factory, SnapshotDividendTracker, WMON mocks,
-            liquidity remover, etc.) were moved out of the v1 deployment surface. v1 is now intentionally minimal:
-            fewer moving parts, fewer assumptions, easier to audit and operate.
-          </p>
+          <div class="card">
+            <div class="card-title">SwapVault</div>
+            <ul class="checklist">
+              <li class="ok">Router-based swap execution</li>
+              <li class="ok">Controlled by TaxVault</li>
+              <li class="ok">DEX isolation layer</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Multisig Vaults</div>
+            <ul class="checklist">
+              <li class="ok">MarketingVault (2-of-3)</li>
+              <li class="ok">TeamVestingVault (2-of-3)</li>
+              <li class="ok">USDC custody</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title">BoostNFT (Optional)</div>
+            <ul class="checklist">
+              <li class="ok">Reward weight multiplier</li>
+              <li class="ok">Tiered NFT system</li>
+              <li class="warn">Must remain bounded + auditable</li>
+            </ul>
+          </div>
+
         </div>
       </section>
 
-      <!-- MAINNET -->
-      <section class="section" id="mainnet">
+      <!-- ===================================================== -->
+      <!-- STATUS -->
+      <!-- ===================================================== -->
+      <section class="section" id="status">
         <div class="section-head">
-          <h2>Mainnet Readiness</h2>
-          <p>
-            Your mainnet blockers are operational, not architectural: you must create the pair and seed liquidity on
-            Uniswap V2. The router is enforced on mainnet by the locked scripts.
-          </p>
+          <h2>Deployment Status</h2>
         </div>
 
         <div class="grid grid-2">
+
           <div class="card">
-            <div class="card-title">Hard requirements before deploying MMMToken on mainnet</div>
+            <div class="card-title">Testnet Completed</div>
             <ul class="checklist">
-              <li class="ok">Hardhat network configured: monadMainnet (chainId 143)</li>
-              <li class="ok">DEX verified: Factory + Router code present</li>
-              <li class="ok">WMON address known</li>
-              <li class="warn">PAIR_ADDR must be created on mainnet (Factory.createPair)</li>
-              <li class="warn">Initial liquidity plan (MMM + MON, LP recipient, price, slippage)</li>
-              <li class="warn">Operational plan: when taxes are enabled vs when liquidity is seeded</li>
+              <li class="ok">All vaults deployed</li>
+              <li class="ok">Pair created</li>
+              <li class="ok">Liquidity seeded</li>
+              <li class="ok">Token launched</li>
+              <li class="ok">Reward gating verified</li>
+              <li class="ok">Manifest-based deployment</li>
             </ul>
           </div>
 
           <div class="card">
-            <div class="card-title">Mainnet safety checklist (recommended)</div>
+            <div class="card-title">Security Posture</div>
             <ul class="checklist">
-              <li class="warn">Finalize and freeze parameters (tax bps, hold time, cooldown, min balance)</li>
-              <li class="warn">Confirm owner key security (hardware wallet / segregation / backups)</li>
-              <li class="warn">Dry-run scripts: deploy-v1-locked-main.js with DRYRUN=1</li>
-              <li class="warn">Preflight from manifest on mainnet</li>
-              <li class="warn">Stamp manifest (bytecode hashes + commit hash) and commit to git</li>
-              <li class="warn">Monitoring plan (RPC health, balances, RewardVault pending growth, TaxVault inflow)</li>
+              <li class="ok">Deterministic deployment</li>
+              <li class="ok">One-time wiring guards</li>
+              <li class="ok">Ownership transfer discipline</li>
+              <li class="warn">Mainnet multisig owners pending</li>
+              <li class="warn">Final parameter freeze pending</li>
             </ul>
           </div>
-        </div>
 
-        <div class="callout callout-blue">
-          <div class="callout-title">Key point: PAIR_ADDR is not “automatic” on mainnet</div>
-          <p>
-            On mainnet, you will generate it by calling <span class="mono">UniswapV2Factory.createPair(MMM, WMON)</span>,
-            then using that returned pair address as <span class="mono">PAIR_ADDR</span> in your deployment.
-            Your script is correctly refusing to proceed without real code at PAIR_ADDR.
-          </p>
         </div>
       </section>
 
+      <!-- ===================================================== -->
       <!-- ROADMAP -->
+      <!-- ===================================================== -->
       <section class="section" id="roadmap">
         <div class="section-head">
-          <h2>Roadmap (Updated)</h2>
-          <p>
-            This roadmap is now aligned to what you actually shipped: v1 core + locked deploy pipeline first, then mainnet
-            pair/liquidity, then operational reward distribution and UX.
-          </p>
+          <h2>Roadmap</h2>
         </div>
 
         <div class="timeline">
-          <!-- Phase 0 -->
+
           <div class="panel">
             <div class="panel-head">
-              <div>
-                <div class="panel-kicker">Phase 0</div>
-                <h3>v1 Core + Locked Pipeline (Completed on testnet)</h3>
-              </div>
+              <h3>Phase 0 — Modular Testnet Deployment</h3>
               <span class="badge badge-green">DONE</span>
             </div>
-
             <div class="panel-body">
               <ul class="checklist">
-                <li class="ok">MMMToken / TaxVault / RewardVault deployed (testnet)</li>
-                <li class="ok">hold-time + cooldown + minBalance gating implemented</li>
-                <li class="ok">excluded eligibleSupply rule fixed + deterministic</li>
-                <li class="ok">deploy-v1-locked writes manifest</li>
-                <li class="ok">preflight-from-manifest reads only manifest</li>
-                <li class="ok">assert-manifest supports offline + on-chain validation</li>
-                <li class="ok">stamp-manifest pins bytecode hashes + git commit</li>
+                <li class="ok">Full vault system deployed</li>
+                <li class="ok">Liquidity seeded</li>
+                <li class="ok">Token launched</li>
+                <li class="ok">Reward logic validated</li>
               </ul>
-
-              <div class="detection-grid">
-                <div class="detection-item">
-                  <strong>Why this matters</strong>
-                  You now have a repeatable deployment that is hard to “misconfigure silently”.
-                </div>
-                <div class="detection-item">
-                  <strong>What it prevents</strong>
-                  Wrong vault wiring, stale env vars, ABI mismatches, router/pair confusion.
-                </div>
-              </div>
             </div>
           </div>
 
-          <!-- Phase 1 -->
           <div class="panel">
             <div class="panel-head">
-              <div>
-                <div class="panel-kicker">Phase 1</div>
-                <h3>Mainnet Launch Preparation (Uniswap V2)</h3>
-              </div>
+              <h3>Phase 1 — Mainnet Deployment</h3>
               <span class="badge badge-amber">NEXT</span>
             </div>
-
             <div class="panel-body">
               <ul class="checklist">
-                <li class="warn">Create mainnet pair on UniswapV2Factory (MMM / WMON)</li>
-                <li class="warn">Set PAIR_ADDR to created pair, verify code exists</li>
-                <li class="warn">Deploy v1 locked on monadMainnet (router enforced)</li>
-                <li class="warn">Run preflight-from-manifest + assert-manifest</li>
-                <li class="warn">Stamp manifest and commit deployments/monadMainnet/latest.json</li>
+                <li class="warn">Create real pair</li>
+                <li class="warn">Seed liquidity via router</li>
+                <li class="warn">Replace test multisig owners</li>
+                <li class="warn">Stamp mainnet manifest</li>
               </ul>
-
-              <div class="callout-mini">
-                <div class="callout-mini-title">Mainnet enforcement</div>
-                <p>
-                  <span class="mono">ROUTER_ADDR</span> is mandatory on mainnet. Your script enforces code presence at router
-                  and refuses to proceed otherwise.
-                </p>
-              </div>
             </div>
           </div>
 
-          <!-- Phase 2 -->
           <div class="panel">
             <div class="panel-head">
-              <div>
-                <div class="panel-kicker">Phase 2</div>
-                <h3>Liquidity + Trading Open</h3>
-              </div>
+              <h3>Phase 2 — Operational Scaling</h3>
               <span class="badge badge-gray">PLANNED</span>
             </div>
-
             <div class="panel-body">
               <ul class="checklist">
-                <li class="warn">Seed initial liquidity (MMM + MON via Router.addLiquidityETH)</li>
-                <li class="warn">Confirm pair reserves, price, and slippage tolerances</li>
-                <li class="warn">Enable/confirm taxes policy for launch window</li>
-                <li class="warn">Post-launch monitoring: TaxVault inflow, RewardVault balance, claim behavior</li>
+                <li class="warn">Automated tax → reward sweep</li>
+                <li class="warn">Vault monitoring dashboard</li>
+                <li class="warn">Reward cadence discipline</li>
+                <li class="warn">Governance transparency</li>
               </ul>
             </div>
           </div>
 
-          <!-- Phase 3 -->
           <div class="panel">
             <div class="panel-head">
-              <div>
-                <div class="panel-kicker">Phase 3</div>
-                <h3>Rewards Operations (Tax → Reward flow)</h3>
-              </div>
-              <span class="badge badge-gray">PLANNED</span>
-            </div>
-
-            <div class="panel-body">
-              <ul class="checklist">
-                <li class="warn">Define cadence: when to sweep TaxVault → RewardVault</li>
-                <li class="warn">Automate notifyRewardAmountFromTaxVault operations (ops script)</li>
-                <li class="warn">Finalize exclusions policy + admin workflow</li>
-                <li class="warn">Dashboard: pending rewards, claim rates, vault balances</li>
-              </ul>
-
-              <div class="phase-grid">
-                <div class="phase-card">
-                  <h4>Distribution discipline</h4>
-                  <p class="muted">
-                    RewardVault must remain deterministic: align reward exclusions and eligibleSupply exclusions by policy.
-                  </p>
-                </div>
-                <div class="phase-card">
-                  <h4>Operational transparency</h4>
-                  <p class="muted">
-                    Manifest + stamped bytecode hashes become the reference point for community and audits.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Phase 4 -->
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <div class="panel-kicker">Phase 4</div>
-                <h3>Optional Extensions (NFT / boosts / advanced anti-gaming)</h3>
-              </div>
+              <h3>Phase 3 — Optional Extensions</h3>
               <span class="badge badge-gray">OPTIONAL</span>
             </div>
-
             <div class="panel-body">
-              <p class="muted">
-                v1 stays minimal. Any NFT multiplier or advanced detection must be added without breaking deterministic
-                distributions or introducing unbounded iteration.
-              </p>
-
-              <div class="phase-grid">
-                <div class="phase-card">
-                  <span class="tier-badge tier-diamond">Diamond</span>
-                  <span class="tier-badge tier-active">Active</span>
-                  <h4>Boosted rewards (optional)</h4>
-                  <p class="muted">NFT tiers can modify claim weights, but must remain bounded and auditable.</p>
-                </div>
-
-                <div class="phase-card">
-                  <span class="tier-badge tier-gamer">Gamer</span>
-                  <h4>Advanced anti-gaming (optional)</h4>
-                  <p class="muted">
-                    Heuristics and enforcement should remain conservative and clearly documented to avoid false positives.
-                  </p>
-                </div>
-              </div>
-
-              <div class="detection-grid">
-                <div class="detection-item">
-                  <strong>Candidate checks</strong>
-                  same-block churn, rapid in/out, multi-wallet patterns, sandwich correlation signals.
-                </div>
-                <div class="detection-item">
-                  <strong>Policy goal</strong>
-                  reduce extraction and reward gaming while keeping normal users unaffected.
-                </div>
-              </div>
+              <ul class="checklist">
+                <li class="warn">Advanced anti-gaming heuristics</li>
+                <li class="warn">NFT multiplier tuning</li>
+                <li class="warn">Analytics layer</li>
+              </ul>
             </div>
           </div>
+
         </div>
 
         <div class="footer-note">
-          Last updated: aligned to v1 locked deploy + manifest pipeline (testnet), and Monad mainnet Uniswap V2 addresses.
+          Last updated: aligned with full modular deployment (Token + Vault system + Multisig + NFT layer).
         </div>
+
       </section>
+
     </main>
 
     <footer class="footer">
       <div class="container footer-inner">
         <div class="muted">
-          MMM — Monad Money Machine • v1 locked deploy pipeline • manifests + preflight + assert
+          MMM — Modular Token + Vault Protocol on Monad
         </div>
         <div class="muted">
-          Roadmap UI is static HTML/CSS — keep it simple, keep it readable, keep it honest.
+          Deterministic deployment • Vault discipline • Reward gating
         </div>
       </div>
     </footer>
+
   </body>
 </html>
