@@ -17,17 +17,29 @@
   <!-- Topbar -->
   <header class="topbar">
     <div class="container topbar__inner">
+  
       <div class="brand">
         <div class="brand__mark">MMM</div>
         <div>
           <div class="brand__title">MMM Dashboard</div>
-          <div class="brand__subtitle"> • Protocol State • </div>
+          <div class="brand__subtitle">• Protocol State •</div>
         </div>
       </div>
 
       <div class="topbar__actions">
+
+        <!-- Roadmap Link -->
+        <a
+          href="https://road-f3g5.onrender.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn--ghost"
+        >
+          <i class="fas fa-map"></i> Roadmap
+        </a>
+
         <button id="refreshBtn" class="btn btn--ghost" type="button">
-          <i class="fas fa-sync-alt"></i>  
+          <i class="fas fa-sync-alt"></i>
         </button>
 
         <button id="disconnectBtn" class="btn btn--ghost" type="button" disabled>
@@ -38,6 +50,7 @@
           <i class="fas fa-wallet"></i>
           <span id="connectLabel">Connect</span>
         </button>
+
       </div>
     </div>
   </header>

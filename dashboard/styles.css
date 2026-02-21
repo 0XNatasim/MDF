@@ -703,3 +703,44 @@ body {
 
 /* Scrollable table wrapper always clips overflow */
 .table-wrap { overflow-x: auto; }
+
+/* link roadmap */
+
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.dashboard-title h1 {
+  margin: 0;
+}
+
+.dashboard-title p {
+  margin: 4px 0 0;
+  opacity: 0.6;
+  font-size: 14px;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+}
+
+.btn-outline {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  transition: all 150ms ease;
+}
+
+.btn-outline:hover {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: rgba(124, 58, 237, 0.6);
+}
