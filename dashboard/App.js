@@ -1201,11 +1201,7 @@ function fillPercent(pct) {
   }
 }
 
-// Re-acquire fresh signer to ensure it matches current MetaMask account
-signer = await browserProvider.getSigner();
-routerWrite = new ethers.Contract(CONFIG.router, ROUTER_ABI, signer);
-wmonWrite   = new ethers.Contract(CONFIG.wmon, WMON_ABI, signer);
-tokenWrite  = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, signer);
+
 
 
 
