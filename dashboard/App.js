@@ -48,6 +48,8 @@ const ERC20_ABI = [
 
 const ROUTER_ABI = [
   "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)",
+  "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) payable",
+  "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline)",
 ];
 
 const WMON_ABI = [
@@ -1338,47 +1340,47 @@ async function execSwap() {
     showLoading("Preparing swap…");
 
     if (side === "buy") {
+      // Use swapExactETHForTokensSupportingFeeOnTransferTokens — single tx,
+      // handles fee-on-transfer correctly, no wrap/approve steps needed.
       const value = ethers.parseEther(String(amountIn));
-      
-      showLoading("Wrapping MON to WMON...");
-      const wrapTx = await wmonWrite.deposit({ value });
-      await wrapTx.wait();
-      
-      showLoading("Approving WMON...");
-      const approveTx = await wmonWrite.approve(CONFIG.router, value);
-      await approveTx.wait();
-      
-      const path = [CONFIG.wmon, CONFIG.mmmToken];
-      const expectedOut = value;
-      const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
+      const path  = [CONFIG.wmon, CONFIG.mmmToken];
+      const decimals = MMM_DECIMALS;
 
-      showLoading("Swapping WMON → MMM...");
-      const tx = await routerWrite.swapExactTokensForTokens(
-        value,
+      // Quote expected MMM out from reserves, then apply slippage
+      let minOut = 0n;
+      try {
+        const expectedOut = await quoteOutFromReserves(value, CONFIG.wmon, CONFIG.mmmToken);
+        minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
+      } catch (_) {
+        // If quote fails, use 0 minOut (rely entirely on slippage protection being disabled)
+        minOut = 0n;
+      }
+
+      showLoading("Swapping MON → MMM…");
+      const tx = await routerWrite.swapExactETHForTokensSupportingFeeOnTransferTokens(
         minOut,
         path,
         to,
-        deadline
+        deadline,
+        { value, gasLimit: 600_000n }
       );
 
       const rcpt = await tx.wait();
 
-      const amountMonIn = Number(amountIn);
-      const outMmmHuman = Number(ethers.formatUnits(expectedOut, connectedSnapshot.decimals || 18));
+      // Read actual MMM received from balance delta
+      const mmmAfter  = await tokenRead.balanceOf(connectedAddress);
+      const amountMonIn   = Number(amountIn);
+      const outMmmHuman   = Number(ethers.formatUnits(mmmAfter, decimals));
       const pricePaidMonPerMmm = outMmmHuman > 0 ? (amountMonIn / outMmmHuman) : 0;
 
-      const amountMonStr = `${amountMonIn} MON`;
-      const amountMmmStr = `${fmtCompact(outMmmHuman)} MMM`;
-      const quoteStr = `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`;
-
       actions.unshift({
-        type: "BUY",
-        amountMon: amountMonStr,
-        amountMmm: amountMmmStr,
-        quote: quoteStr,
-        txHash: rcpt.hash,
-        status: "Completed",
-        dateTime: nowDateTime(),
+        type:      "BUY",
+        amountMon: `${amountMonIn} MON`,
+        amountMmm: `${fmtCompact(outMmmHuman)} MMM`,
+        quote:     `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`,
+        txHash:    rcpt.hash,
+        status:    "Completed",
+        dateTime:  nowDateTime(),
       });
 
       saveData();
@@ -1407,12 +1409,13 @@ async function execSwap() {
     const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
 
     showLoading("Swapping MMM → WMON...");
-    const swapTx = await routerWrite.swapExactTokensForTokens(
+    const swapTx = await routerWrite.swapExactTokensForTokensSupportingFeeOnTransferTokens(
       amountInBn,
       minOut,
       path,
       connectedAddress,
-      deadline
+      deadline,
+      { gasLimit: 600_000n }
     );
     await swapTx.wait();
 

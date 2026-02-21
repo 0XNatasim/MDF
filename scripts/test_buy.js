@@ -86,7 +86,7 @@ async function main() {
     process.env.TESTNET_MMM
   ];
   const deadline = Math.floor(Date.now() / 1000) + 1200;
-  const buyAmount = ethers.parseEther("0.01");
+  const buyAmount = ethers.parseEther("1");
 
   console.log("Preparing swap...");
 
