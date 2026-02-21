@@ -1402,7 +1402,9 @@ async function execSwap() {
       const rcpt = await tx.wait();
 
       // Read actual MMM received from balance delta
+      const mmmBefore = connectedSnapshot.mmmHoldings || 0;
       const mmmAfter  = await tokenRead.balanceOf(connectedAddress);
+      const mmmReceived = Math.max(0, mmmAfter - mmmBefore);
       const amountMonIn   = Number(amountIn);
       const totalMmmHuman = Number(ethers.formatUnits(mmmAfter, decimals));
       const pricePaidMonPerMmm = totalMmmHuman > 0 ? (amountMonIn / totalMmmHuman) : 0;
@@ -1410,7 +1412,7 @@ async function execSwap() {
       actions.unshift({
         type:      "BUY",
         amountMon: `${amountMonIn} MON`,
-        amountMmm: `${fmtCompact(totalMmmHuman, 4)} MMM`,  // total holdings after buy
+        amountMmm: `${fmtCompact(mmmReceived, 4)} MMM`,  // total holdings after buy
         quote:     `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`,
         txHash:    rcpt.hash,
         status:    "Completed",
