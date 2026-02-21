@@ -803,18 +803,7 @@ async function renderConnectedCard() {
   }
 
   const eligibility = await getWalletEligibility(connectedAddress);
-  if (!eligibility) {
-    // RPC throttle / transient failure — preserve last-good render if present
-    if (!container.innerHTML.trim()) {
-      container.innerHTML = `
-        <div class="wallet-card">
-          <div style="padding:8px 0; color:rgba(255,255,255,0.55); font-size:13px;">
-            <i class="fas fa-circle-notch fa-spin"></i> Loading wallet data…
-          </div>
-        </div>`;
-    }
-    return;
-  }
+  if (!eligibility) return; // or `continue` in a loop
 
 
   const holdText =
@@ -905,28 +894,7 @@ async function renderWallets() {
 
   for (const w of wallets) {
     const eligibility = await getWalletEligibility(w.address);
-    if (!eligibility) {
-      // Transient RPC failure — render a skeleton card so the wallet doesn't vanish
-      html += `
-        <div class="wallet-card">
-          <div class="wallet-top">
-            <div class="wallet-id">
-              <div class="wallet-mark">${escapeHtml(w.name.charAt(0).toUpperCase())}</div>
-              <div style="min-width:0;">
-                <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-                <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
-              </div>
-            </div>
-            <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-          <div style="padding:8px 0; color:rgba(255,255,255,0.45); font-size:12px;">
-            <i class="fas fa-circle-notch fa-spin"></i> Fetching data…
-          </div>
-        </div>`;
-      continue;
-    }
+    if (!eligibility) continue;
 
 
     const holdText =
@@ -1400,8 +1368,7 @@ async function execSwap() {
 
 
     const slippageBps = Math.floor(slippagePct * 100);
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
-
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
     const to = connectedAddress;
 
     showLoading("Preparing swap…");
@@ -1435,9 +1402,7 @@ async function execSwap() {
       const rcpt = await tx.wait();
 
       // Read actual MMM received from balance delta
-      const mmmBefore = connectedSnapshot.mmmHoldings || 0;
       const mmmAfter  = await tokenRead.balanceOf(connectedAddress);
-      const mmmReceived = Math.max(0, mmmAfter - mmmBefore);
       const amountMonIn   = Number(amountIn);
       const totalMmmHuman = Number(ethers.formatUnits(mmmAfter, decimals));
       const pricePaidMonPerMmm = totalMmmHuman > 0 ? (amountMonIn / totalMmmHuman) : 0;
@@ -1445,7 +1410,7 @@ async function execSwap() {
       actions.unshift({
         type:      "BUY",
         amountMon: `${amountMonIn} MON`,
-        amountMmm: `${fmtCompact(mmmReceived, 4)} MMM`,  // total holdings after buy
+        amountMmm: `${fmtCompact(totalMmmHuman, 4)} MMM`,  // total holdings after buy
         quote:     `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`,
         txHash:    rcpt.hash,
         status:    "Completed",
