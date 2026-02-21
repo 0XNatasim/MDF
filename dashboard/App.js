@@ -121,6 +121,7 @@ let protocolSnapshot = {
   rewardVaultMon: 0,
   mmmPerMon: null,
   lastRefresh: null,
+  connectedMon: null,
 };
 
 /* =========================
@@ -779,6 +780,14 @@ function updateKPIs() {
   } else {
     setText("kpiRefresh", "—");
   }
+
+  // Network card: show connected wallet MON balance
+  const monEl = $("kpiConnectedMon");
+  if (monEl) {
+    monEl.textContent = protocolSnapshot.connectedMon !== null
+      ? `${fmt(protocolSnapshot.connectedMon, 4)} MON`
+      : "—";
+  }
 }
 
 /* =========================
@@ -1038,11 +1047,23 @@ function renderActions() {
           ? `<a class="link mono" href="${CONFIG.explorerBase}/tx/${a.txHash}" target="_blank" rel="noreferrer">${shortAddr(a.txHash)}</a>`
           : escapeHtml(a.txHash || "—");
 
+      const isSell  = a.type === "SELL";
+      const isBuy   = a.type === "BUY";
+      const badgeCls = isSell ? "badge badge--bad" : "badge badge--good";
+
+      // BUY: amountMmm column shows total MMM holdings at time of buy
+      // SELL: amountMmm column shows amount sold
+      const mmmCell = isBuy
+        ? escapeHtml(a.amountMmm || "—")   // total holdings snapshot logged at buy time
+        : isSell
+          ? escapeHtml(a.amountMmm || "—") // amount sold
+          : escapeHtml(a.amountMmm || "—");
+
       return `
         <tr>
-          <td><span class="badge badge--good">${escapeHtml(a.type)}</span></td>
+          <td><span class="${badgeCls}">${escapeHtml(a.type)}</span></td>
           <td class="mono">${escapeHtml(a.amountMon || "—")}</td>
-          <td class="mono">${escapeHtml(a.amountMmm || "—")}</td>
+          <td class="mono">${mmmCell}</td>
           <td class="mono">${escapeHtml(a.quote || "—")}</td>
           <td>${explorerLink}</td>
           <td><span class="badge badge--good">${escapeHtml(a.status || "Pending")}</span></td>
@@ -1359,18 +1380,13 @@ async function execSwap() {
       const path  = [CONFIG.wmon, CONFIG.mmmToken];
       const decimals = MMM_DECIMALS;
 
-      // Quote expected MMM out from reserves.
-      // MMM has a buy tax (taken AFTER pair transfer, from buyer).
-      // swapExactETHForTokensSupportingFeeOnTransferTokens checks received amount,
-      // so minOut must be BELOW the pre-tax quote by at least the tax amount.
-      // We apply: slippage + 6% tax buffer (covers up to launch-time 8% decay tax).
+      // Quote expected MMM out from reserves, then apply slippage
       let minOut = 0n;
       try {
         const expectedOut = await quoteOutFromReserves(value, CONFIG.wmon, CONFIG.mmmToken);
-        // Tax buffer: 600 bps (6%) + user slippage
-        const totalDeductBps = BigInt(slippageBps) + 600n;
-        minOut = expectedOut - (expectedOut * totalDeductBps) / 10_000n;
+        minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
       } catch (_) {
+        // If quote fails, use 0 minOut (rely entirely on slippage protection being disabled)
         minOut = 0n;
       }
 
@@ -1388,13 +1404,13 @@ async function execSwap() {
       // Read actual MMM received from balance delta
       const mmmAfter  = await tokenRead.balanceOf(connectedAddress);
       const amountMonIn   = Number(amountIn);
-      const outMmmHuman   = Number(ethers.formatUnits(mmmAfter, decimals));
-      const pricePaidMonPerMmm = outMmmHuman > 0 ? (amountMonIn / outMmmHuman) : 0;
+      const totalMmmHuman = Number(ethers.formatUnits(mmmAfter, decimals));
+      const pricePaidMonPerMmm = totalMmmHuman > 0 ? (amountMonIn / totalMmmHuman) : 0;
 
       actions.unshift({
         type:      "BUY",
         amountMon: `${amountMonIn} MON`,
-        amountMmm: `${fmtCompact(outMmmHuman)} MMM`,
+        amountMmm: `${fmtCompact(totalMmmHuman, 4)} MMM`,  // total holdings after buy
         quote:     `${fmtTiny(pricePaidMonPerMmm, 10)} MON/MMM`,
         txHash:    rcpt.hash,
         status:    "Completed",
@@ -1423,19 +1439,8 @@ async function execSwap() {
     }
 
     const path = [CONFIG.mmmToken, CONFIG.wmon];
-
-    // Quote real WMON out from reserves.
-    // Sell tax is taken before MMM hits pair, so net MMM = amountIn - tax.
-    // We quote on the net amount, then apply slippage on top.
-    let minOut = 0n;
-    try {
-      const sellTaxBps = 500n; // steady-state 5%; conservative for UI
-      const netMmmToPair = amountInBn - (amountInBn * sellTaxBps) / 10_000n;
-      const expectedWmonOut = await quoteOutFromReserves(netMmmToPair, CONFIG.mmmToken, CONFIG.wmon);
-      minOut = expectedWmonOut - (expectedWmonOut * BigInt(slippageBps)) / 10_000n;
-    } catch (_) {
-      minOut = 0n;
-    }
+    const expectedOut = amountInBn;
+    const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
 
     showLoading("Swapping MMM → WMON...");
     const swapTx = await routerWrite.swapExactTokensForTokensSupportingFeeOnTransferTokens(
@@ -1521,6 +1526,14 @@ async function refreshAll() {
       connectedSnapshot.decimals
     );
     protocolSnapshot.lastRefresh = new Date();
+
+    // Fetch connected wallet MON balance if connected
+    if (connectedAddress) {
+      const monRaw = await readProvider.getBalance(connectedAddress).catch(() => 0n);
+      protocolSnapshot.connectedMon = Number(ethers.formatEther(monRaw));
+    } else {
+      protocolSnapshot.connectedMon = null;
+    }
 
     await updatePoolReservesUI();
     updateKPIs();
