@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20 }    from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Ownable }   from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /*//////////////////////////////////////////////////////////////
                         ROUTER INTERFACE
@@ -35,7 +36,7 @@ interface IRewardVaultAdmin {
                             TAX VAULT
 //////////////////////////////////////////////////////////////*/
 
-contract TaxVault is Ownable {
+contract TaxVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -44,18 +45,18 @@ contract TaxVault is Ownable {
 
     error ZeroAddress();
     error NotWired();
-    error AmountZero();
     error RouterMissing();
-    error OnlyOwnerOrKeeper();
+    error AmountZero();
     error ProcessingDisabled();
-    error DeadlineExpired();
+    error TooSoon();
+    error BelowThreshold();
     error InsufficientBalance();
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant BPS  = 10_000;
+    uint256 public constant BPS = 10_000;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     /*//////////////////////////////////////////////////////////////
@@ -84,13 +85,21 @@ contract TaxVault is Ownable {
     bool public processingEnabled = true;
 
     /*//////////////////////////////////////////////////////////////
+                                KEEPER CONFIG
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public minProcessAmount = 5_000 ether;
+    uint256 public minProcessInterval = 5 minutes;
+    uint256 public lastProcessTime;
+
+    /*//////////////////////////////////////////////////////////////
                                 SPLITS
     //////////////////////////////////////////////////////////////*/
 
     uint16 public bpsReward = 4000; // 40%
     uint16 public bpsBurn   = 1000; // 10%
-    uint16 public bpsMkt    =  700; // 70% of USDC
-    uint16 public bpsTeam   =  300; // 30% of USDC
+    uint16 public bpsMkt    = 700;  // 70% of USDC
+    uint16 public bpsTeam   = 300;  // 30% of USDC
 
     bool public useDirectUsdcPath = true;
 
@@ -125,19 +134,9 @@ contract TaxVault is Ownable {
             initialOwner == address(0)
         ) revert ZeroAddress();
 
-        mmm  = IERC20(mmmToken);
+        mmm = IERC20(mmmToken);
         usdc = IERC20(usdcToken);
         wmon = IERC20(wmonToken);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                                MODIFIER
-    //////////////////////////////////////////////////////////////*/
-
-    modifier onlyOwnerOrKeeper() {
-        if (msg.sender != owner() && msg.sender != keeper)
-            revert OnlyOwnerOrKeeper();
-        _;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -162,6 +161,14 @@ contract TaxVault is Ownable {
         processingEnabled = v;
     }
 
+    function setProcessConfig(
+        uint256 minAmount,
+        uint256 minInterval
+    ) external onlyOwner {
+        minProcessAmount = minAmount;
+        minProcessInterval = minInterval;
+    }
+
     function wireOnce(
         address rewardVault_,
         address marketingVault_,
@@ -178,26 +185,63 @@ contract TaxVault is Ownable {
         teamVestingVault = teamVestingVault_;
     }
 
-    /// @notice Exclude an address from RewardVault eligible supply.
-    ///         Use this to block malicious wallets from earning rewards.
     function excludeFromRewards(address a) external onlyOwner {
         if (a == address(0)) revert ZeroAddress();
         IRewardVaultAdmin(rewardVault).addExcludedRewardAddress(a);
     }
 
     /*//////////////////////////////////////////////////////////////
-                                PROCESS
+                        KEEPER ENTRYPOINT
+    //////////////////////////////////////////////////////////////*/
+
+    function processTaxes() external nonReentrant {
+        if (!processingEnabled) revert ProcessingDisabled();
+
+        if (
+            block.timestamp < lastProcessTime + minProcessInterval
+        ) revert TooSoon();
+
+        uint256 balance = mmm.balanceOf(address(this));
+
+        if (balance < minProcessAmount)
+            revert BelowThreshold();
+
+        lastProcessTime = block.timestamp;
+
+        _process(balance, 0, block.timestamp + 5 minutes);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        MANUAL OVERRIDE
     //////////////////////////////////////////////////////////////*/
 
     function process(
         uint256 mmmAmount,
         uint256 minUsdcOut,
         uint256 deadline
-    ) external onlyOwnerOrKeeper {
-
+    ) external nonReentrant {
         if (!processingEnabled) revert ProcessingDisabled();
         if (mmmAmount == 0) revert AmountZero();
-        if (block.timestamp > deadline) revert DeadlineExpired();
+        if (block.timestamp > deadline) revert TooSoon();
+
+        uint256 balance = mmm.balanceOf(address(this));
+        if (balance < mmmAmount)
+            revert InsufficientBalance();
+
+        lastProcessTime = block.timestamp;
+
+        _process(mmmAmount, minUsdcOut, deadline);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        INTERNAL PROCESS LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function _process(
+        uint256 mmmAmount,
+        uint256 minUsdcOut,
+        uint256 deadline
+    ) internal {
 
         if (
             rewardVault == address(0) ||
@@ -205,41 +249,21 @@ contract TaxVault is Ownable {
             teamVestingVault == address(0)
         ) revert NotWired();
 
-        uint256 balance = mmm.balanceOf(address(this));
-        if (balance < mmmAmount) revert InsufficientBalance();
-
-        /*//////////////////////////////////////////////////////////////
-                            1. SPLIT MMM
-        //////////////////////////////////////////////////////////////*/
-
         uint256 toReward = (mmmAmount * bpsReward) / BPS;
-        uint256 toBurn   = (mmmAmount * bpsBurn)   / BPS;
+        uint256 toBurn   = (mmmAmount * bpsBurn) / BPS;
         uint256 toSwap   = mmmAmount - toReward - toBurn;
-
-        /*//////////////////////////////////////////////////////////////
-                            2. BURN
-        //////////////////////////////////////////////////////////////*/
 
         if (toBurn > 0)
             mmm.safeTransfer(DEAD, toBurn);
-
-        /*//////////////////////////////////////////////////////////////
-                        3. SEND REWARD + ACTIVATE EMISSION
-        //////////////////////////////////////////////////////////////*/
 
         if (toReward > 0) {
             mmm.safeTransfer(rewardVault, toReward);
             IRewardVault(rewardVault).notifyRewardAmount(toReward);
         }
 
-        /*//////////////////////////////////////////////////////////////
-                            4. SWAP TO USDC
-        //////////////////////////////////////////////////////////////*/
-
         uint256 usdcOut = 0;
 
         if (toSwap > 0) {
-
             if (router == address(0)) revert RouterMissing();
 
             address[] memory path;
@@ -267,10 +291,6 @@ contract TaxVault is Ownable {
 
             usdcOut = usdc.balanceOf(address(this)) - balBefore;
         }
-
-        /*//////////////////////////////////////////////////////////////
-                            5. SPLIT USDC
-        //////////////////////////////////////////////////////////////*/
 
         uint256 denom = uint256(bpsMkt) + uint256(bpsTeam);
 

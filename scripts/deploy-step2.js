@@ -128,8 +128,8 @@ async function main() {
   const RewardVault = await ethers.getContractFactory("RewardVault");
   const rewardVault = await RewardVault.deploy(
     MMM_ADDR,
-    7 * 24 * 3600,
-    24 * 3600,
+    60 * 60,   /* 7 * 24 * 3600 */
+    15 * 60,   /* 24 * 3600 */
     ethers.parseUnits("1000", 18),
     deployer.address
   );
@@ -270,6 +270,16 @@ async function main() {
   console.log(`TESTNET_MARKETING_VAULT=${MARKETINGVAULT_ADDR}`);
   console.log(`TESTNET_TEAM_VAULT=${TEAMVESTINGVAULT_ADDR}`);
   console.log(`TESTNET_BOOST_NFT=${BOOSTNFT_ADDR}`);
+  console.log("\n================================================");
+  console.log("\nCopy these into your App.js:\n");
+  console.log("\n================================================");
+  console.log(`mmmToken: "${MMM_ADDR}"`);
+  console.log(`rewardVault: "${REWARDVAULT_ADDR}"`);
+  console.log(`taxVault: "${TAXVAULT_ADDR}"`);
+  console.log(`router: "${ROUTER_ADDR}"`);
+  console.log(`pair: "${PAIR_ADDR}"`);
+  console.log(`wmon: "${WETH_ADDR}"`);
+  console.log(`tracker: "${ROUTER_ADDR}"`);
   console.log("\n================================================");
   console.log("⚠️  POST-DEPLOY CHECKLIST:");
   console.log("1. Update .env with all addresses above.");
