@@ -352,56 +352,38 @@ function initWatchedSlider() {
   restart();
 }
 /* =========================
-   Chain read setup (Fallback RPC – SAFE)
+   Chain read setup (CLEAN + SAFE)
 ========================= */
 async function initReadSide() {
 
-  /* ---------- RPC URLs ---------- */
-
-  const urls = [
-    CONFIG.RPC_URL,
-    CONFIG.RPC_URL2,
-    CONFIG.RPC_URL3
-  ].filter(Boolean);
-
-  if (!urls.length) {
-    throw new Error("No RPC URLs configured.");
+  if (!CONFIG.rpcUrls || !CONFIG.rpcUrls.length) {
+    throw new Error("No RPC URLs configured in CONFIG.rpcUrls");
   }
 
-  /* ---------- Providers ---------- */
-
-  const providers = urls.map((url) =>
-    new ethers.JsonRpcProvider(
-      url,
-      {
-        name: "monadTestnet",
-        chainId: 143
-      },
-      {
-        staticNetwork: true
-      }
-    )
+  // Build providers from config
+  const providers = CONFIG.rpcUrls.map(
+    (url) =>
+      new ethers.JsonRpcProvider(
+        url,
+        {
+          name: CONFIG.chainName,
+          chainId: CONFIG.chainIdDec,
+        },
+        { staticNetwork: true }
+      )
   );
 
   readProvider = new ethers.FallbackProvider(providers, 1);
 
-  /* ---------- Verify Network ---------- */
-
-  const network = await readProvider.getNetwork();
-  if (Number(network.chainId) !== 143) {
-    throw new Error(`Wrong network detected: ${network.chainId}`);
+  // Validate network
+  const net = await readProvider.getNetwork();
+  if (Number(net.chainId) !== CONFIG.chainIdDec) {
+    throw new Error(
+      `Wrong network: expected ${CONFIG.chainIdDec}, got ${net.chainId}`
+    );
   }
 
-  console.log("Read provider ready. RPC count:", urls.length);
-
-  /* =====================================================
-     CONTRACT INITIALIZATION (after provider confirmed)
-  ===================================================== */
-
-  if (!CONFIG.mmmToken) throw new Error("MMM token address missing");
-  if (!CONFIG.rewardVault) throw new Error("RewardVault address missing");
-
-  /* ---------- Core Contracts ---------- */
+  /* ---------- Contracts ---------- */
 
   tokenRead = new ethers.Contract(
     CONFIG.mmmToken,
@@ -410,9 +392,8 @@ async function initReadSide() {
   );
 
   try {
-    MMM_DECIMALS = await tokenRead.decimals();
-  } catch (e) {
-    console.warn("Could not fetch decimals, defaulting to 18");
+    MMM_DECIMALS = Number(await tokenRead.decimals());
+  } catch {
     MMM_DECIMALS = 18;
   }
 
@@ -427,8 +408,6 @@ async function initReadSide() {
     ROUTER_ABI,
     readProvider
   );
-
-  /* ---------- Pair + WMON ---------- */
 
   if (CONFIG.wmon && CONFIG.pair) {
     EFFECTIVE_WMON = CONFIG.wmon;
@@ -445,11 +424,7 @@ async function initReadSide() {
       PAIR_ABI,
       readProvider
     );
-  } else {
-    console.warn("WMON or Pair address missing in config.");
   }
-
-  /* ---------- Boost NFT ---------- */
 
   if (CONFIG.boostNFT) {
     boostNftRead = new ethers.Contract(
@@ -459,7 +434,7 @@ async function initReadSide() {
     );
   }
 
-  console.log("Read-side initialization complete.");
+  logInfo("Read-side initialized.");
 }
 /* =========================
    Connect wallet
@@ -1673,6 +1648,13 @@ async function execSwap() {
    Refresh
 ========================= */
 async function refreshAll() {
+
+  // 🔒 Safety guard — prevents decimals undefined crash
+  if (!tokenRead || !rewardVaultRead) {
+    console.warn("Read side not ready yet.");
+    return;
+  }
+
   if (refreshInFlight) return;
   refreshInFlight = true;
 
@@ -1796,53 +1778,37 @@ function bindUI() {
    Boot
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  const mmmLink = $("mmmLink");
-  const poolLink = $("poolLink");
+  try {
 
-  if (mmmLink) {
-    mmmLink.textContent = CONFIG.mmmToken;
-    mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
-  }
+    loadData();
+    bindUI();
+    setHeaderConnectionUI(false);
 
-  const trackerLink = $("trackerLink");
-  if (trackerLink) {
-    trackerLink.textContent = CONFIG.tracker;
-    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
-  }
+    if (wallets.length === 0 && CONFIG.defaultWatch?.length) {
+      wallets = CONFIG.defaultWatch.map((a, i) =>
+        mkWallet(`Watched #${i + 1}`, a)
+      );
+      saveData();
+    }
 
-  // poolLink is set AFTER initReadSide (further below) so pairAddress is populated
+    await initReadSide(); // 🔥 CRITICAL — wait for contracts
 
-  initWatchedSlider();
-  loadData();
+    await refreshAll();   // 🔥 AFTER init
 
-  if (wallets.length === 0 && CONFIG.defaultWatch?.length) {
-    wallets = CONFIG.defaultWatch.map((a, i) => mkWallet(`Watched #${i + 1}`, a));
-    saveData();
-  }
+    // Attempt silent wallet reconnect
+    if (window.ethereum) {
+      const accounts = await window.ethereum.request({
+        method: "eth_accounts",
+      });
 
-  bindUI();
-  setHeaderConnectionUI(false);
+      if (accounts?.length) {
+        await connectWallet(true);
+      }
+    }
 
-  await initReadSide();
-
-  if (poolLink && pairAddress) {
-    poolLink.textContent = pairAddress;
-    poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
-  }
-
-  renderConnectedCard();
-  renderWallets();
-  renderActions();
-  updateKPIs();
-  await updateSwapQuoteAndButtons();
-
-  await refreshAll();
-
-  if (window.ethereum) {
-    try {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      if (accounts?.length) await connectWallet(true);
-    } catch (_) {}
+  } catch (e) {
+    console.error("Boot error:", e);
+    alert("App failed to initialize. Check console.");
   }
 });
 
