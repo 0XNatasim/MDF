@@ -675,7 +675,7 @@ body {
 
   /* Slider: fixed height, images fill it */
   #watchedSlider.watched-slider {
-    height: 460px;   /* fixed height instead of max-height */
+    height: 600px;   /* fixed height instead of max-height */
     display: flex;
     align-items: center;
     justify-content: center;
