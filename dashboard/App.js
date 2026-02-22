@@ -878,7 +878,6 @@ async function renderConnectedCard() {
     <div class="wallet-card">
       <div class="wallet-top">
         <div class="wallet-id">
-          <div class="wallet-mark">W</div>
           <div style="min-width:0;">
             <h3 class="wallet-name">
               Connected Wallet ${nftBadge}
@@ -970,7 +969,6 @@ async function renderWallets() {
       <div class="wallet-card">
         <div class="wallet-top">
           <div class="wallet-id">
-            <div class="wallet-mark">
               ${escapeHtml(w.name.charAt(0).toUpperCase())}
             </div>
             <div style="min-width:0;">
