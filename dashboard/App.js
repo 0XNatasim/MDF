@@ -969,9 +969,6 @@ async function renderWallets() {
       <div class="wallet-card">
         <div class="wallet-top">
           <div class="wallet-id">
-            <div class="wallet-mark">
-              ${escapeHtml(w.name.charAt(0).toUpperCase())}
-            </div>
             <div style="min-width:0;">
               <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
               <div class="wallet-addr mono">
