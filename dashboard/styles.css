@@ -658,11 +658,7 @@ body {
     /* Stick the right rail so it stays visible while left col scrolls */
     position: sticky;
     top: 72px; /* topbar height + 8px breathing room */
-    max-height: calc(100vh - 90px);
-    overflow-y: auto;
-    scrollbar-width: none; /* Firefox */
   }
-  .dash-right::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
   /* Ops side-by-side only when left col is wide enough */
   .ops { grid-template-columns: 1fr 1fr; }
