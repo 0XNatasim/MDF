@@ -363,6 +363,12 @@ body {
   font-weight: 800;
 }
 
+.wallet-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* badges */
 .badge {
   display: inline-flex;

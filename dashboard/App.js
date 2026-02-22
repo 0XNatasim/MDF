@@ -828,9 +828,8 @@ function updateKPIs() {
   }
 }
 
-
 /* =========================
-   Connected wallet card (FINAL CLEAN VERSION)
+   Connected wallet card (UPDATED LAYOUT)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -874,39 +873,42 @@ async function renderConnectedCard() {
 
   const nftBadge = nftBadgeMap[boostStatus] || "";
 
+  /* ---------- RIGHT SIDE STATUS ---------- */
+
+  const eligibilityButton = eligibility.canClaim
+    ? `
+      <button class="btn btn--primary"
+              onclick="claimRewards('${connectedAddress}')">
+        <i class="fas fa-hand-holding-dollar"></i> Claim
+      </button>`
+    : `
+      <button class="btn btn--ghost" disabled>
+        <i class="fas fa-clock"></i> Not eligible
+      </button>`;
+
   /* ---------- RENDER ---------- */
 
   container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
+
         <div class="wallet-id">
-          <div style="min-width:0;">
-            <h3 class="wallet-name">
-              Connected Wallet ${nftBadge}
-            </h3>
-            <div class="wallet-addr mono">
-              ${escapeHtml(connectedAddress)}
-              <button class="icon-btn"
-                      onclick="copyText('${connectedAddress}')"
-                      title="Copy address">
-                <i class="fas fa-copy"></i>
-              </button>
-            </div>
+          <h3 class="wallet-name">Connected Wallet</h3>
+          <div class="wallet-addr mono">
+            ${escapeHtml(connectedAddress)}
+            <button class="icon-btn"
+                    onclick="copyText('${connectedAddress}')"
+                    title="Copy address">
+              <i class="fas fa-copy"></i>
+            </button>
           </div>
         </div>
 
-        ${
-          eligibility.canClaim
-            ? `
-              <button class="btn btn--primary"
-                      onclick="claimRewards('${connectedAddress}')">
-                <i class="fas fa-hand-holding-dollar"></i> Claim
-              </button>`
-            : `
-              <button class="btn btn--ghost" disabled>
-                <i class="fas fa-clock"></i> Not eligible
-              </button>`
-        }
+        <div class="wallet-status">
+          ${nftBadge}
+          ${eligibilityButton}
+        </div>
+
       </div>
 
       <div class="wallet-metrics">
