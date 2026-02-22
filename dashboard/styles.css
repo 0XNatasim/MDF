@@ -342,11 +342,18 @@ body {
   gap: 6px;
   align-items: center;
   min-width: 0;
-  word-break: break-all;   /* break 0x... address mid-string */
+  word-break: break-all;   /* break 0x... address mid-string on mobile */
   overflow-wrap: anywhere;
 }
 
-.wallet-metrics { display: grid; gap: 12px; }
+@media (min-width: 1024px) {
+  .wallet-addr {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+}
+
+.wallet-metrics { display: grid; gap: 10px; margin-top: 14px; margin-bottom: 14px; }
 
 .metric {
   display: flex;
@@ -376,11 +383,27 @@ body {
   color: rgba(0,255,170,0.95);
 }
 
+.badge--bad {
+  border-color: rgba(255,95,130,0.30);
+  background: rgba(255,95,130,0.08);
+  color: rgba(255,110,140,0.95);
+}
+
 .badge--warn {
+  border-color: rgba(255,200,80,0.25);
+  background: rgba(255,200,80,0.06);
+  color: rgba(255,210,90,0.90);
+}
+
+.badge--neutral {
   border-color: rgba(255,255,255,0.16);
   background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.78);
 }
+
+/* Inline eligibility status text */
+.ok   { color: rgba(0,255,170,0.95); font-weight: 700; }
+.warn { color: rgba(255,200,80,0.90); font-weight: 700; }
 
 .icon-btn {
   width: 38px;
@@ -654,9 +677,18 @@ body {
     top: 72px; /* topbar height + 8px breathing room */
     max-height: calc(100vh - 90px);
     overflow-y: auto;
-    scrollbar-width: none; /* Firefox */
+    scrollbar-width: thin; /* Firefox — thin instead of none */
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
   }
-  .dash-right::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+  .dash-right::-webkit-scrollbar { width: 4px; }
+  .dash-right::-webkit-scrollbar-track { background: transparent; }
+  .dash-right::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.14);
+    border-radius: 999px;
+  }
+  .dash-right::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.22);
+  }
 
   /* Ops side-by-side only when left col is wide enough */
   .ops { grid-template-columns: 1fr 1fr; }
@@ -700,13 +732,13 @@ body {
 }
 
 .nft-common {
-  background: rgba(120,120,120,0.15);
-  color: #138a27;
-  border: 1px solid rgba(200,200,200,0.3);
+  background: rgba(140,140,140,0.15);
+  color: rgba(200,200,200,0.92);
+  border: 1px solid rgba(200,200,200,0.28);
 }
 
 .nft-rare {
-  background: rgba(110,0,255,0.15);
-  color: #0591c9;
-  border: 1px solid rgba(180,130,255,0.5);
+  background: rgba(130,60,255,0.18);
+  color: rgba(200,160,255,0.95);
+  border: 1px solid rgba(160,100,255,0.45);
 }

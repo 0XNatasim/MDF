@@ -701,8 +701,10 @@ async function updatePoolReservesUI() {
 
     setText("poolMmmReserves", fmtCompact(mmmHuman, 2));
     setText("poolWmonReserves", fmtCompact(wmonHuman, 2));
-    setText("poolMmmValue", `~${fmtCompact(wmonHuman, 2)} MON`);
-    setText("poolWmonValue", `~${fmtCompact(wmonHuman, 2)} MON`);
+    // Both sides of the pool are worth the same in MON (AMM invariant)
+    // MON-equivalent of MMM side = WMON reserve (x*y=k means equal value at spot price)
+    setText("poolMmmValue", `≈${fmtCompact(wmonHuman, 2)} MON equiv.`);
+    setText("poolWmonValue", `≈${fmtCompact(wmonHuman, 2)} MON`);
     setText("poolMmmPct", `${mmmPct}%`);
     setText("poolWmonPct", `${wmonPct}%`);
   } catch (e) {
@@ -1127,6 +1129,12 @@ function renderActions() {
           ? escapeHtml(a.amountMmm || "—") // amount sold
           : escapeHtml(a.amountMmm || "—");
 
+      const statusCls = (a.status || "").toLowerCase() === "completed"
+        ? "badge badge--good"
+        : (a.status || "").toLowerCase() === "pending"
+          ? "badge badge--warn"
+          : "badge badge--neutral";
+
       return `
         <tr>
           <td><span class="${badgeCls}">${escapeHtml(a.type)}</span></td>
@@ -1134,7 +1142,7 @@ function renderActions() {
           <td class="mono">${mmmCell}</td>
           <td class="mono">${escapeHtml(a.quote || "—")}</td>
           <td>${explorerLink}</td>
-          <td><span class="badge badge--good">${escapeHtml(a.status || "Pending")}</span></td>
+          <td><span class="${statusCls}">${escapeHtml(a.status || "Pending")}</span></td>
           <td class="mono">${escapeHtml(a.dateTime || "—")}</td>
         </tr>
       `;
@@ -1699,13 +1707,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   const poolLink = $("poolLink");
 
   if (mmmLink) {
-    mmmLink.textContent = CONFIG.mmmToken;
+    mmmLink.textContent = shortAddr(CONFIG.mmmToken);
+    mmmLink.title = CONFIG.mmmToken;
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
 
   const trackerLink = $("trackerLink");
   if (trackerLink) {
-    trackerLink.textContent = CONFIG.tracker;
+    trackerLink.textContent = shortAddr(CONFIG.tracker);
+    trackerLink.title = CONFIG.tracker;
     trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
   }
 
@@ -1725,7 +1735,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   await initReadSide();
 
   if (poolLink && pairAddress) {
-    poolLink.textContent = pairAddress;
+    poolLink.textContent = shortAddr(pairAddress);
+    poolLink.title = pairAddress;
     poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
   }
 
