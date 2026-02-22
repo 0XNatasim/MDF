@@ -845,7 +845,19 @@ async function renderConnectedCard() {
   ]);
 
   if (!eligibility) {
-    container.innerHTML = "";
+    container.innerHTML = `
+      <div class="wallet-card">
+        <div class="wallet-top">
+          <h3 class="wallet-name">Connected Wallet</h3>
+        </div>
+        <div class="wallet-metrics">
+          <div class="metric">
+            <span class="k">Status:</span>
+            <span class="v mono warn">RPC unavailable</span>
+          </div>
+        </div>
+      </div>
+    `;
     return;
   }
 
@@ -950,7 +962,31 @@ async function renderWallets() {
 
   for (const w of wallets) {
     const eligibility = await getWalletEligibility(w.address);
-    if (!eligibility) continue;
+  
+    if (!eligibility) {
+      html += `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <div style="min-width:0;">
+                <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+                <div class="wallet-addr mono">
+                  ${escapeHtml(w.address)}
+                </div>
+              </div>
+            </div>
+          </div>
+  
+          <div class="wallet-metrics">
+            <div class="metric">
+              <span class="k">Status:</span>
+              <span class="v mono warn">RPC unavailable</span>
+            </div>
+          </div>
+        </div>
+      `;
+      continue;
+    }
 
 
     const holdText =
