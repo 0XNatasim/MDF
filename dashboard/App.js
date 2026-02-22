@@ -351,16 +351,42 @@ function initWatchedSlider() {
   setActive(0);
   restart();
 }
-
 /* =========================
-   Chain read setup
+   Chain read setup (Fallback RPC)
 ========================= */
 async function initReadSide() {
-  readProvider = new ethers.FallbackProvider(
-    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url)),
-    null,
-    { quorum: 1 }
+
+  const urls = [
+    CONFIG.RPC_URL,
+    CONFIG.RPC_URL2,
+    CONFIG.RPC_URL3
+  ].filter(Boolean);
+
+  if (!urls.length) {
+    throw new Error("No RPC URLs configured.");
+  }
+
+  const providers = urls.map((url) =>
+    new ethers.JsonRpcProvider(
+      url,
+      {
+        name: "monadTestnet",
+        chainId: 143
+      },
+      {
+        staticNetwork: true   // prevents repeated network detection calls
+      }
+    )
   );
+
+  readProvider = new ethers.FallbackProvider(
+    providers,
+    1   // quorum = 1 (first successful response wins)
+  );
+
+  console.log("Read provider initialized with", urls.length, "RPC endpoints.");
+
+
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
   MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
