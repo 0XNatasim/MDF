@@ -953,7 +953,7 @@ async function renderConnectedCard() {
   `;
 }
 /* =========================
-   Watched wallets (NFT RIGHT SIDE)
+   Watched wallets (FIXED)
 ========================= */
 async function renderWallets() {
   const container = $("walletsContainer");
@@ -970,56 +970,9 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
+    const eligibility = await getWalletEligibility(w.address);
+    if (!eligibility) continue;
 
-    // Individual .catch() ensures one bad RPC never drops the entire card
-    const [eligibility, boostStatus] = await Promise.all([
-      getWalletEligibility(w.address).catch(() => null),
-      getBoostStatus(w.address).catch(() => null),
-    ]);
-
-    const nftBadgeMap = {
-      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
-      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
-    };
-
-    const nftBadge = nftBadgeMap[boostStatus] || "";
-
-    // If eligibility RPC failed, render the card in a degraded state instead of dropping it
-    if (!eligibility) {
-      html += `
-        <div class="wallet-card">
-          <div class="wallet-top">
-            <div class="wallet-id">
-              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-              <div class="wallet-addr mono">
-                ${escapeHtml(w.address)}
-                <button class="icon-btn" onclick="copyText('${w.address}')" title="Copy address">
-                  <i class="fas fa-copy"></i>
-                </button>
-              </div>
-            </div>
-            <div class="wallet-status">
-              ${nftBadge}
-              <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
-          </div>
-          <div class="wallet-metrics">
-            <div class="metric">
-              <span class="k">Status:</span>
-              <span class="v" style="color:rgba(255,200,80,0.85); font-size:12px;">
-                <i class="fas fa-triangle-exclamation"></i> RPC error — tap refresh to retry
-              </span>
-            </div>
-          </div>
-          <button class="btn btn--ghost btn--block" disabled>
-            <i class="fas fa-clock"></i> Not eligible yet
-          </button>
-        </div>
-      `;
-      continue;
-    }
 
     const holdText =
       !eligibility.hasMinBalance
@@ -1036,28 +989,28 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
-
           <div class="wallet-id">
-            <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-            <div class="wallet-addr mono">
-              ${escapeHtml(w.address)}
-              <button class="icon-btn"
-                      onclick="copyText('${w.address}')"
-                      title="Copy address">
-                <i class="fas fa-copy"></i>
-              </button>
+            <div class="wallet-mark">
+              ${escapeHtml(w.name.charAt(0).toUpperCase())}
+            </div>
+            <div style="min-width:0;">
+              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+              <div class="wallet-addr mono">
+                ${escapeHtml(w.address)}
+                <button class="icon-btn"
+                        onclick="copyText('${w.address}')"
+                        title="Copy address">
+                  <i class="fas fa-copy"></i>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="wallet-status">
-            ${nftBadge}
-            <button class="icon-btn"
-                    onclick="removeWallet('${w.id}')"
-                    title="Remove">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-
+          <button class="icon-btn"
+                  onclick="removeWallet('${w.id}')"
+                  title="Remove">
+            <i class="fas fa-trash"></i>
+          </button>
         </div>
 
         <div class="wallet-metrics">
