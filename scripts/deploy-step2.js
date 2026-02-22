@@ -273,13 +273,20 @@ async function main() {
   console.log("\n================================================");
   console.log("\nCopy these into your App.js:\n");
   console.log("\n================================================");
-  console.log(`mmmToken: "${MMM_ADDR}",`);
-  console.log(`rewardVault: "${REWARDVAULT_ADDR}",`);
-  console.log(`taxVault: "${TAXVAULT_ADDR}",`);
-  console.log(`router: "${ROUTER_ADDR}",`);
-  console.log(`pair: "${PAIR_ADDR}",`);
-  console.log(`wmon: "${WETH_ADDR}",`);
-  console.log(`tracker: "${ROUTER_ADDR}",`);
+  console.log(`  mmmToken: "${MMM_ADDR}",`);
+  console.log(`  rewardVault: "${REWARDVAULT_ADDR}",`);
+  console.log(`  taxVault: "${TAXVAULT_ADDR}",`);
+  console.log(`  router: "${ROUTER_ADDR}",`);
+  console.log(`  pair: "${PAIR_ADDR}",`);
+  console.log(`  wmon: "${WETH_ADDR}",`);
+  console.log(`  tracker: "${ROUTER_ADDR}",`);
+  console.log(`  boostNFT: "${BOOSTNFT_ADDR}",`);
+
+
+
+  
+
+
   console.log("\n================================================");
   console.log("⚠️  POST-DEPLOY CHECKLIST:");
   console.log("1. Update .env with all addresses above.");
