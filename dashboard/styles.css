@@ -656,10 +656,6 @@ body {
     position: sticky;
     top: 72px;
 
-    max-height: calc(100vh - 90px);
-    overflow-y: auto;
-
-    scrollbar-width: none;
   }
 
   .dash-right::-webkit-scrollbar {
@@ -675,7 +671,7 @@ body {
 
   /* Slider: fixed height, images fill it */
   #watchedSlider.watched-slider {
-    height: 600px;   /* fixed height instead of max-height */
+    height: 460px;   /* fixed height instead of max-height */
     display: flex;
     align-items: center;
     justify-content: center;
