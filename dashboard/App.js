@@ -961,7 +961,10 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
-    const eligibility = await getWalletEligibility(w.address);
+    const [eligibility, boostStatus] = await Promise.all([
+      getWalletEligibility(w.address),
+      getBoostStatus(w.address),
+    ]);
   
     if (!eligibility) {
       html += `
