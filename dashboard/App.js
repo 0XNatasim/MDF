@@ -959,7 +959,8 @@ async function renderWallets() {
   const container = $("walletsContainer");
   if (!container) return;
 
-  if (!wallets.length) {
+  // If no wallets saved
+  if (!wallets || wallets.length === 0) {
     container.innerHTML = `
       <div style="padding:16px; color:rgba(255,255,255,0.55); text-align:center;">
         No watched wallets yet.
@@ -970,9 +971,42 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
-    const eligibility = await getWalletEligibility(w.address);
-    if (!eligibility) continue;
+    let eligibility = null;
+    let boostStatus = null;
 
+    try {
+      [eligibility, boostStatus] = await Promise.all([
+        getWalletEligibility(w.address),
+        getBoostStatus(w.address)
+      ]);
+    } catch (e) {
+      console.warn("Wallet fetch error:", w.address, e);
+    }
+
+    // fallback if RPC fails
+    if (!eligibility) {
+      html += `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+              <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
+            </div>
+          </div>
+          <div style="padding:12px; color:rgba(255,255,255,0.5);">
+            RPC busy — retrying...
+          </div>
+        </div>
+      `;
+      continue;
+    }
+
+    const nftBadgeMap = {
+      COMMON: `<span class="nft-badge nft-common">C</span>`,
+      RARE: `<span class="nft-badge nft-rare">R</span>`
+    };
+
+    const nftBadge = nftBadgeMap[boostStatus] || "";
 
     const holdText =
       !eligibility.hasMinBalance
@@ -989,10 +1023,8 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
+
           <div class="wallet-id">
-            <div class="wallet-mark">
-              ${escapeHtml(w.name.charAt(0).toUpperCase())}
-            </div>
             <div style="min-width:0;">
               <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
               <div class="wallet-addr mono">
@@ -1006,11 +1038,27 @@ async function renderWallets() {
             </div>
           </div>
 
-          <button class="icon-btn"
-                  onclick="removeWallet('${w.id}')"
-                  title="Remove">
-            <i class="fas fa-trash"></i>
-          </button>
+          <div class="wallet-status">
+            ${nftBadge}
+            ${
+              eligibility.canClaim
+                ? `
+                  <button class="btn btn--secondary btn--small"
+                          onclick="claimRewards('${w.address}')">
+                    Claim
+                  </button>`
+                : `
+                  <button class="btn btn--ghost btn--small" disabled>
+                    Not eligible
+                  </button>`
+            }
+            <button class="icon-btn"
+                    onclick="removeWallet('${w.id}')"
+                    title="Remove">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+
         </div>
 
         <div class="wallet-metrics">
@@ -1034,21 +1082,6 @@ async function renderWallets() {
             <span class="v mono">${cooldownText}</span>
           </div>
         </div>
-
-        ${
-          eligibility.canClaim
-            ? `
-        <button class="btn btn--secondary btn--block"
-                onclick="claimRewards('${w.address}')">
-          <i class="fas fa-hand-holding-dollar"></i>
-          Claim Rewards
-        </button>`
-            : `
-        <button class="btn btn--ghost btn--block" disabled>
-          <i class="fas fa-clock"></i>
-          Not eligible yet
-        </button>`
-        }
       </div>
     `;
   }
