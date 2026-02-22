@@ -675,14 +675,19 @@ body {
 
   /* Slider: fixed height, images fill it */
   #watchedSlider.watched-slider {
-    max-height: 420px;
+    height: 460px;   /* fixed height instead of max-height */
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  #watchedSlider.watched-slider .watched-slide {
-    max-height: 420px;
-    aspect-ratio: unset;
-    object-fit: cover;
+  
+    #watchedSlider.watched-slider .watched-slide {
+      height: 100%;
+      width: 100%;
+      object-fit: contain;   /* 🔥 critical change */
+      background: rgba(0,0,0,0.25);
+    }
   }
-}
 
 /* ── Narrow mobile (<480px) ── */
 @media (max-width: 479px) {
