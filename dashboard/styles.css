@@ -675,10 +675,10 @@ body {
 
   /* Slider: fixed height, images fill it */
   #watchedSlider.watched-slider {
-    max-height: 340px;
+    max-height: 420px;
   }
   #watchedSlider.watched-slider .watched-slide {
-    max-height: 340px;
+    max-height: 420px;
     aspect-ratio: unset;
     object-fit: cover;
   }
