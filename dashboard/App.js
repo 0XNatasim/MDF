@@ -16,7 +16,7 @@ const CONFIG = {
   chainIdHex: "0x279F",
   chainName: "Monad Testnet",
   nativeSymbol: "MON",
-  rpcUrls: ["https://testnet-rpc.monad.xyz"],
+  rpcUrls: ["https://testnet-rpc.monad.xyz","https://rpc.ankr.com/monad_testnet","https://rpc-testnet.monadinfra.com"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
   mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
