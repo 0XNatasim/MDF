@@ -284,7 +284,11 @@ body {
   grid-template-columns: 1fr;
 }
 
-/* Connected / watched cards */
+/* =========================================
+   WALLET CARDS (CONNECTED + WATCHED)
+   Clean version — no avatar mark block
+========================================= */
+
 .wallet-card {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.10);
@@ -292,94 +296,72 @@ body {
   padding: 16px;
 }
 
+/* Top row (title + badge / button) */
 .wallet-top {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
   align-items: flex-start;
+  gap: 10px;
   margin-bottom: 12px;
   min-width: 0;
-  overflow: hidden;
 }
 
+/* Wallet ID container (text only now) */
 .wallet-id {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-  /* critical: let text content shrink so long addresses don't push layout */
-  overflow: hidden;
   flex: 1 1 0;
 }
 
-/* the text block next to the avatar mark must also shrink */
-.wallet-id > div {
-  min-width: 0;
-  overflow: hidden;
-  flex: 1 1 0;
-}
-
-.wallet-mark {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-
-  border-radius: 8px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  font-size: 12px;
-  font-weight: 600;
-
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.85);
-
-  flex-shrink: 0;
-}
-
-.wallet-mark--btn {
-  cursor: pointer;
-  transition: all 140ms ease;
-}
-.wallet-mark--btn:hover {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.20);
-}
-
+/* Title (Connected Wallet / Watched Wallet) */
 .wallet-name {
   margin: 0;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.01em;
+  color: rgba(255,255,255,0.92);
 }
 
+/* Address row */
 .wallet-addr {
-  margin-top: 4px;
   font-size: 11px;
   color: rgba(255,255,255,0.70);
-  /* flex so the copy button aligns, but constrained to parent width */
+
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+
   min-width: 0;
-  word-break: break-all;   /* break 0x... address mid-string */
+  word-break: break-all;
   overflow-wrap: anywhere;
 }
 
-.wallet-metrics { display: grid; gap: 12px; }
+/* Metrics grid */
+.wallet-metrics {
+  display: grid;
+  gap: 12px;
+}
 
+/* Metric row */
 .metric {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: baseline;
 }
-.metric .k { color: rgba(255,255,255,0.70); font-size: 12px; }
-.metric .v { font-weight: 900; font-size: 13px; }
+
+.metric .k {
+  font-size: 12px;
+  color: rgba(255,255,255,0.70);
+}
+
+.metric .v {
+  font-size: 13px;
+  font-weight: 800;
+}
 
 /* badges */
 .badge {
