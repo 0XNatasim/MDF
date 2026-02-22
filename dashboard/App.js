@@ -503,10 +503,8 @@ async function getWalletEligibility(addr) {
   const nowTs = Math.floor(Date.now() / 1000);
 
   try {
-    // 1️⃣ Load global vault params ONCE (cached)
     await loadVaultParams();
 
-    // 2️⃣ Per-wallet calls ONLY (reduced set)
     const [
       balRaw,
       pendingRaw,
@@ -529,9 +527,7 @@ async function getWalletEligibility(addr) {
 
     const minBalance = VAULT_PARAMS.minBalance;
 
-    /* -------------------------
-       HOLD (only before first claim)
-    -------------------------- */
+    /* HOLD */
     let holdRemaining = 0;
 
     if (
@@ -545,9 +541,7 @@ async function getWalletEligibility(addr) {
       holdRemaining = Math.max(0, holdEnd - nowTs);
     }
 
-    /* -------------------------
-       COOLDOWN (after claim)
-    -------------------------- */
+    /* COOLDOWN */
     let cooldownRemaining = 0;
 
     if (lastClaimAt > 0n) {
@@ -575,15 +569,23 @@ async function getWalletEligibility(addr) {
     };
 
   } catch (e) {
-    // IMPORTANT: fail-soft, do NOT lie with zeros
-    if (!String(e.message).includes("Too Many Requests")) {
-      console.warn("[getWalletEligibility skipped]", addr, e.message);
-    }
-    
-    return null;
+    console.warn("[getWalletEligibility fail-soft]", addr, e?.message);
+
+    // 🔥 Critical: never return null
+    // This prevents watched wallets from disappearing
+
+    return {
+      bal: 0,
+      pending: 0,
+      holdRemaining: 0,
+      cooldownRemaining: 0,
+      canClaim: false,
+      hasMinBalance: false,
+      lastClaimAt: 0,
+      lastNonZeroAt: 0,
+    };
   }
 }
-
 /* =========================
    Claim logic (RewardVault v1)
 ========================= */
@@ -950,7 +952,22 @@ async function renderWallets() {
 
   for (const w of wallets) {
     const eligibility = await getWalletEligibility(w.address);
-    if (!eligibility) continue;
+    if (!eligibility) {
+      html += `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+              <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
+            </div>
+          </div>
+          <div style="padding:12px; color:rgba(255,255,255,0.5);">
+            Unable to fetch on-chain data (RPC busy)
+          </div>
+        </div>
+      `;
+      continue;
+    }
 
 
     const holdText =
