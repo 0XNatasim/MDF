@@ -827,10 +827,8 @@ function updateKPIs() {
 }
 
 
-
-
 /* =========================
-   Connected wallet card (FIXED)
+   Connected wallet card (FINAL CLEAN VERSION)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -846,18 +844,35 @@ async function renderConnectedCard() {
     getBoostStatus(connectedAddress),
   ]);
 
-  if (!eligibility) return;
-
-  let nftBadge = "";
-
-  if (boostStatus === "COMMON") {
-    nftBadge = `<span class="nft-badge nft-common">C</span>`;
+  if (!eligibility) {
+    container.innerHTML = "";
+    return;
   }
 
-  if (boostStatus === "RARE") {
-    nftBadge = `<span class="nft-badge nft-rare">R</span>`;
-  }
-  
+  /* ---------- HOLD + COOLDOWN TEXT ---------- */
+
+  const holdText =
+    !eligibility.hasMinBalance
+      ? `<span class="warn">Insufficient balance</span>`
+      : eligibility.holdRemaining === 0
+        ? `<span class="ok">Ready</span>`
+        : `<span class="mono">${formatCountdown(eligibility.holdRemaining)}</span>`;
+
+  const cooldownText =
+    eligibility.cooldownRemaining === 0
+      ? `<span class="ok">Ready</span>`
+      : `<span class="mono">${formatCountdown(eligibility.cooldownRemaining)}</span>`;
+
+  /* ---------- NFT BADGE ---------- */
+
+  const nftBadgeMap = {
+    COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+    RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+  };
+
+  const nftBadge = nftBadgeMap[boostStatus] || "";
+
+  /* ---------- RENDER ---------- */
 
   container.innerHTML = `
     <div class="wallet-card">
@@ -882,14 +897,14 @@ async function renderConnectedCard() {
         ${
           eligibility.canClaim
             ? `
-          <button class="btn btn--primary"
-                  onclick="claimRewards('${connectedAddress}')">
-            <i class="fas fa-hand-holding-dollar"></i> Claim
-          </button>`
+              <button class="btn btn--primary"
+                      onclick="claimRewards('${connectedAddress}')">
+                <i class="fas fa-hand-holding-dollar"></i> Claim
+              </button>`
             : `
-          <button class="btn btn--ghost" disabled>
-            <i class="fas fa-clock"></i> Not eligible
-          </button>`
+              <button class="btn btn--ghost" disabled>
+                <i class="fas fa-clock"></i> Not eligible
+              </button>`
         }
       </div>
 
@@ -917,7 +932,6 @@ async function renderConnectedCard() {
     </div>
   `;
 }
-
 /* =========================
    Watched wallets (FIXED)
 ========================= */
