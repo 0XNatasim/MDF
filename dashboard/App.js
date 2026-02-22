@@ -352,9 +352,11 @@ function initWatchedSlider() {
   restart();
 }
 /* =========================
-   Chain read setup (Fallback RPC)
+   Chain read setup (Fallback RPC – SAFE)
 ========================= */
 async function initReadSide() {
+
+  /* ---------- RPC URLs ---------- */
 
   const urls = [
     CONFIG.RPC_URL,
@@ -366,6 +368,8 @@ async function initReadSide() {
     throw new Error("No RPC URLs configured.");
   }
 
+  /* ---------- Providers ---------- */
+
   const providers = urls.map((url) =>
     new ethers.JsonRpcProvider(
       url,
@@ -374,43 +378,89 @@ async function initReadSide() {
         chainId: 143
       },
       {
-        staticNetwork: true   // prevents repeated network detection calls
+        staticNetwork: true
       }
     )
   );
 
-  readProvider = new ethers.FallbackProvider(
-    providers,
-    1   // quorum = 1 (first successful response wins)
-  );
+  readProvider = new ethers.FallbackProvider(providers, 1);
 
-  console.log("Read provider initialized with", urls.length, "RPC endpoints.");
+  /* ---------- Verify Network ---------- */
 
-
-
-  tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
-  MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
-  rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, readProvider);
-  routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
-
-  try {
-    EFFECTIVE_WMON = CONFIG.wmon;
-    pairAddress = CONFIG.pair;
-    wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
-    pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
-  } catch (e) {
-    console.warn("Could not read factory from router:", e);
+  const network = await readProvider.getNetwork();
+  if (Number(network.chainId) !== 143) {
+    throw new Error(`Wrong network detected: ${network.chainId}`);
   }
 
-  boostNftRead = new ethers.Contract(
-    CONFIG.boostNFT,
-    BOOSTNFT_ABI,
+  console.log("Read provider ready. RPC count:", urls.length);
+
+  /* =====================================================
+     CONTRACT INITIALIZATION (after provider confirmed)
+  ===================================================== */
+
+  if (!CONFIG.mmmToken) throw new Error("MMM token address missing");
+  if (!CONFIG.rewardVault) throw new Error("RewardVault address missing");
+
+  /* ---------- Core Contracts ---------- */
+
+  tokenRead = new ethers.Contract(
+    CONFIG.mmmToken,
+    ERC20_ABI,
     readProvider
   );
 
-  logInfo("Read-side initialization complete");
-}
+  try {
+    MMM_DECIMALS = await tokenRead.decimals();
+  } catch (e) {
+    console.warn("Could not fetch decimals, defaulting to 18");
+    MMM_DECIMALS = 18;
+  }
 
+  rewardVaultRead = new ethers.Contract(
+    CONFIG.rewardVault,
+    REWARD_VAULT_ABI,
+    readProvider
+  );
+
+  routerRead = new ethers.Contract(
+    CONFIG.router,
+    ROUTER_ABI,
+    readProvider
+  );
+
+  /* ---------- Pair + WMON ---------- */
+
+  if (CONFIG.wmon && CONFIG.pair) {
+    EFFECTIVE_WMON = CONFIG.wmon;
+    pairAddress = CONFIG.pair;
+
+    wmonRead = new ethers.Contract(
+      EFFECTIVE_WMON,
+      WMON_ABI,
+      readProvider
+    );
+
+    pairRead = new ethers.Contract(
+      pairAddress,
+      PAIR_ABI,
+      readProvider
+    );
+  } else {
+    console.warn("WMON or Pair address missing in config.");
+  }
+
+  /* ---------- Boost NFT ---------- */
+
+  if (CONFIG.boostNFT) {
+    boostNftRead = new ethers.Contract(
+      CONFIG.boostNFT,
+      BOOSTNFT_ABI,
+      readProvider
+    );
+  }
+
+  console.log("Read-side initialization complete.");
+}
 /* =========================
    Connect wallet
 ========================= */
