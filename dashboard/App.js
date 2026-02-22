@@ -935,8 +935,9 @@ async function renderConnectedCard() {
     </div>
   `;
 }
+
 /* =========================
-   Watched wallets (FIXED)
+   Watched wallets (NFT SUPPORT ADDED)
 ========================= */
 async function renderWallets() {
   const container = $("walletsContainer");
@@ -953,7 +954,12 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
-    const eligibility = await getWalletEligibility(w.address);
+
+    const [eligibility, boostStatus] = await Promise.all([
+      getWalletEligibility(w.address),
+      getBoostStatus(w.address)
+    ]);
+
     if (!eligibility) {
       html += `
         <div class="wallet-card">
@@ -971,6 +977,16 @@ async function renderWallets() {
       continue;
     }
 
+    /* ---------- NFT BADGE ---------- */
+
+    const nftBadgeMap = {
+      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+    };
+
+    const nftBadge = nftBadgeMap[boostStatus] || "";
+
+    /* ---------- HOLD / COOLDOWN ---------- */
 
     const holdText =
       !eligibility.hasMinBalance
@@ -987,6 +1003,7 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
+
           <div class="wallet-id">
             <div style="min-width:0;">
               <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
@@ -1001,11 +1018,15 @@ async function renderWallets() {
             </div>
           </div>
 
-          <button class="icon-btn"
-                  onclick="removeWallet('${w.id}')"
-                  title="Remove">
-            <i class="fas fa-trash"></i>
-          </button>
+          <div class="wallet-status">
+            ${nftBadge}
+            <button class="icon-btn"
+                    onclick="removeWallet('${w.id}')"
+                    title="Remove">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+
         </div>
 
         <div class="wallet-metrics">
