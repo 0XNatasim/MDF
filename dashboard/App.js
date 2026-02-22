@@ -16,7 +16,13 @@ const CONFIG = {
   chainIdHex: "0x279F",
   chainName: "Monad Testnet",
   nativeSymbol: "MON",
-  rpcUrls: ["https://testnet-rpc.monad.xyz"],
+  // All 3 RPCs — FallbackProvider will try them in priority order
+  // and automatically failover if one is rate-limited or down
+  rpcUrls: [
+    { url: "https://testnet-rpc.monad.xyz",        priority: 1, stallTimeout: 2000 },
+    { url: "https://rpc.ankr.com/monad_testnet",   priority: 2, stallTimeout: 2500 },
+    { url: "https://rpc-testnet.monadinfra.com",   priority: 3, stallTimeout: 3000 },
+  ],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
   mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
@@ -356,11 +362,23 @@ function initWatchedSlider() {
    Chain read setup
 ========================= */
 async function initReadSide() {
-  readProvider = new ethers.FallbackProvider(
-    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url)),
-    null,
-    { quorum: 1 }
-  );
+  // Build provider list — entries can be plain URL strings or {url, priority, stallTimeout} objects
+  const providers = CONFIG.rpcUrls.map((entry) => {
+    const isObj = typeof entry === "object";
+    const url   = isObj ? entry.url      : entry;
+    const prio  = isObj ? entry.priority : 1;
+    const stall = isObj ? entry.stallTimeout : 2000;
+    return {
+      provider: new ethers.JsonRpcProvider(url),
+      priority: prio,
+      stallTimeout: stall,
+      weight: 1,
+    };
+  });
+
+  // quorum: 1 — first provider to respond wins; others act as hot standbys
+  readProvider = new ethers.FallbackProvider(providers, null, { quorum: 1 });
+  logInfo("FallbackProvider initialized with", providers.length, "RPCs");
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
   MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
@@ -445,7 +463,7 @@ async function switchOrAddChain() {
                 symbol: CONFIG.nativeSymbol,
                 decimals: 18,
               },
-              rpcUrls: CONFIG.rpcUrls,
+              rpcUrls: CONFIG.rpcUrls.map(e => typeof e === 'object' ? e.url : e),
               blockExplorerUrls: [CONFIG.explorerBase],
             },
           ],
