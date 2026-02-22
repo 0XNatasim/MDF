@@ -1,5 +1,4 @@
-<!-- index.html (CORRECTED) -->
-
+<!-- index.html (REPLACEMENT) — reorganized exactly as you specified -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,6 +27,8 @@
       </div>
 
       <div class="topbar__actions">
+
+        <!-- Roadmap Link -->
         <a
           href="https://road-f3g5.onrender.com/"
           target="_blank"
@@ -49,13 +50,13 @@
           <i class="fas fa-wallet"></i>
           <span id="connectLabel">Connect</span>
         </button>
+
       </div>
     </div>
   </header>
 
   <main class="container">
-
-    <!-- META -->
+    <!-- ROW 1 (FULL WIDTH): MMM / Tracker / Pool / Price / Refresh -->
     <section class="meta">
       <div class="meta-row">
         <span class="meta-item">
@@ -85,12 +86,11 @@
       </div>
     </section>
 
+    <!-- GRID: left rows 2–4, right slider spans rows 2–4; watched wallets starts UNDER slider -->
     <section class="dash-grid">
-
-      <!-- LEFT -->
+      <!-- LEFT: rows 2–4 -->
       <div class="dash-left">
-
-        <!-- ROW 2 -->
+        <!-- ROW 2 (LEFT): Taxes / Tracker / Network (3 cards) -->
         <section class="stats stats--3">
           <div class="stat">
             <div class="stat__label">Taxes Collected (MMM)</div>
@@ -111,7 +111,7 @@
           </div>
         </section>
 
-        <!-- ROW 3 -->
+        <!-- ROW 3 (LEFT): Pool reserves MMM + WMON -->
         <section class="stats stats--2">
           <div class="stat">
             <div class="stat__label">Pool Reserves: MMM</div>
@@ -132,12 +132,12 @@
           </div>
         </section>
 
+        <!-- Connected wallet card (kept) -->
         <div id="connectedCard" class="card"></div>
 
-        <!-- ROW 4 -->
+        <!-- ROW 4 (LEFT): Swap + Send -->
         <div class="ops">
-
-          <!-- Swap -->
+          <!-- Swap panel -->
           <div class="panel">
             <div class="panel__head">
               <h3>Swap (Router)</h3>
@@ -158,6 +158,7 @@
               <select id="swapSlippage" class="input">
                 <option value="0.5">0.5%</option>
                 <option value="1" selected>1%</option>
+                
                 <option value="3">3%</option>
                 <option value="5">5%</option>
                 <option value="10">10%</option>
@@ -184,7 +185,7 @@
             </div>
           </div>
 
-          <!-- Send -->
+          <!-- Send MMM panel -->
           <div class="panel">
             <div class="panel__head">
               <h3>Send MMM</h3>
@@ -222,7 +223,7 @@
           </div>
         </div>
 
-        <!-- Actions -->
+        <!-- Recent actions (LEFT, below ops) -->
         <section class="section">
           <div class="section__head">
             <h2>Recent Actions (local log)</h2>
@@ -251,25 +252,27 @@
                   <th>Date</th>
                 </tr>
               </thead>
+              
               <tbody id="txBody"></tbody>
             </table>
           </div>
         </section>
-
       </div>
 
-      <!-- RIGHT -->
+      <!-- RIGHT: slider (starts at row2, ends at row4), watched wallets below -->
       <aside class="dash-right">
+        <!-- NFT Slider (higher) -->
         <div id="watchedSlider" class="watched-slider card">
           <img class="watched-slide is-active" src="./MMM1.png" alt="MMM 1"/>
           <img class="watched-slide" src="./MMM2.png" alt="MMM 2"/>
 
           <div class="watched-dots">
-            <button class="watched-dot is-active" type="button" data-slide="0"></button>
-            <button class="watched-dot" type="button" data-slide="1"></button>
+            <button class="watched-dot is-active" type="button" data-slide="0" aria-label="Slide 1"></button>
+            <button class="watched-dot" type="button" data-slide="1" aria-label="Slide 2"></button>
           </div>
         </div>
 
+        <!-- Watched wallets (UNDER slider) -->
         <div class="panel">
           <div class="panel__head panel__head--row">
             <div>
@@ -290,10 +293,10 @@
           <div id="walletsContainer" class="watched-list"></div>
         </div>
       </aside>
-
     </section>
   </main>
 
+  <!-- Loading Overlay -->
   <div id="loadingOverlay" class="loading hidden">
     <div class="loading__card">
       <div class="spinner"></div>
@@ -304,3 +307,4 @@
   <script src="./App.js"></script>
 </body>
 </html>
+  <!-- goood -->

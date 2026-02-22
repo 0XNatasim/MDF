@@ -284,11 +284,7 @@ body {
   grid-template-columns: 1fr;
 }
 
-/* =========================================
-   WALLET CARDS (CONNECTED + WATCHED)
-   Clean version — no avatar mark block
-========================================= */
-
+/* Connected / watched cards */
 .wallet-card {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.10);
@@ -296,84 +292,86 @@ body {
   padding: 16px;
 }
 
-/* Top row (title + badge / button) */
 .wallet-top {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
   gap: 10px;
+  align-items: flex-start;
   margin-bottom: 12px;
   min-width: 0;
+  overflow: hidden;
 }
 
-/* Wallet ID container (text only now) */
 .wallet-id {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 12px;
+  align-items: flex-start;
   min-width: 0;
+  /* critical: let text content shrink so long addresses don't push layout */
+  overflow: hidden;
   flex: 1 1 0;
 }
 
-/* Title (Connected Wallet / Watched Wallet) */
-.wallet-name {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+/* the text block next to the avatar mark must also shrink */
+.wallet-id > div {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 0;
+}
+
+.wallet-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
+  border: 1px solid rgba(255,255,255,0.14);
+  flex-shrink: 0;
   color: rgba(255,255,255,0.92);
 }
 
-/* Address row */
+.wallet-mark--btn {
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.wallet-mark--btn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.20);
+}
+
+.wallet-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
 .wallet-addr {
+  margin-top: 4px;
   font-size: 11px;
   color: rgba(255,255,255,0.70);
-
+  /* flex so the copy button aligns, but constrained to parent width */
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-
   min-width: 0;
-  word-break: break-all;
+  word-break: break-all;   /* break 0x... address mid-string */
   overflow-wrap: anywhere;
 }
 
-/* Metrics grid */
-.wallet-metrics {
-  display: grid;
-  gap: 12px;
-}
+.wallet-metrics { display: grid; gap: 12px; }
 
-/* Metric row */
 .metric {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: baseline;
 }
-
-.wallet-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.metric .k {
-  font-size: 12px;
-  color: rgba(255,255,255,0.70);
-}
-
-.metric .v {
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.wallet-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.metric .k { color: rgba(255,255,255,0.70); font-size: 12px; }
+.metric .v { font-weight: 900; font-size: 13px; }
 
 /* badges */
 .badge {
@@ -656,23 +654,25 @@ body {
 @media (min-width: 1024px) {
   .dash-grid {
     display: grid;
+    /* left col takes the space it needs; right rail is fixed 340px */
     grid-template-columns: 1fr 340px;
     align-items: start;
     gap: 20px;
   }
 
+  /* reset mobile order — grid placement handles columns */
   .dash-left  { order: unset; }
   .dash-right { order: unset; }
 
   .dash-right {
+    /* Stick the right rail so it stays visible while left col scrolls */
     position: sticky;
-    top: 72px;
-
+    top: 72px; /* topbar height + 8px breathing room */
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+    scrollbar-width: none; /* Firefox */
   }
-
-  .dash-right::-webkit-scrollbar {
-    display: none;
-  }
+  .dash-right::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
   /* Ops side-by-side only when left col is wide enough */
   .ops { grid-template-columns: 1fr 1fr; }
@@ -683,19 +683,14 @@ body {
 
   /* Slider: fixed height, images fill it */
   #watchedSlider.watched-slider {
-    height: 460px;   /* fixed height instead of max-height */
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    max-height: 340px;
   }
-  
-    #watchedSlider.watched-slider .watched-slide {
-      height: 100%;
-      width: 100%;
-      object-fit: contain;   /* 🔥 critical change */
-      background: rgba(0,0,0,0.25);
-    }
+  #watchedSlider.watched-slider .watched-slide {
+    max-height: 340px;
+    aspect-ratio: unset;
+    object-fit: cover;
   }
+}
 
 /* ── Narrow mobile (<480px) ── */
 @media (max-width: 479px) {
@@ -709,25 +704,4 @@ body {
 /* Scrollable table wrapper always clips overflow */
 .table-wrap { overflow-x: auto; }
 
-/* nft-badge */
-.nft-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 999px;
-  letter-spacing: 0.5px;
-}
 
-.nft-common {
-  background: rgba(120,120,120,0.15);
-  color: #138a27;
-  border: 1px solid rgba(200,200,200,0.3);
-}
-
-.nft-rare {
-  background: rgba(110,0,255,0.15);
-  color: #0591c9;
-  border: 1px solid rgba(180,130,255,0.5);
-}

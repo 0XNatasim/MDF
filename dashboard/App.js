@@ -18,16 +18,14 @@ const CONFIG = {
   nativeSymbol: "MON",
   rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
-  // === CONTRACTS (MONAD TESTNET) ===
-  mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
-  rewardVault: "0x4d5c39a5270E2Dd37C89008E368A15894F6CA89D",
-  taxVault: "0x077531da7E89f6E7C9ADc23a88115ADdC143B8D5",
-  router: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
-  pair: "0xB1CD16f4BA14FC584E2a55AEA9c408CE3Abd3a02",
-  wmon: "0x8673a8605b3e96123e788ce41E8F269179Bff067",
-  tracker: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
-  boostNFT: "0x213811B94bD180627B43EC4a54e4a6e5D510980d",
-
+// === CONTRACTS (MONAD TESTNET) ===
+mmmToken: "0x4AbCCb4278f08db1670851064B2b984e17eEdf8E"
+rewardVault: "0xFB64ED43DD26fEAde58A9f530ecAF9e30Fb66d0a"
+taxVault: "0xF5D10CC3DdcA65Bec40F370E1d37D9001C8a9544"
+router: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
+pair: "0x1903333faebea78CE8659D23a47b10012416667C"
+wmon: "0xE7b0bA4Afca4e2469A7Fd496AE7EC7a90cC17dF3"
+tracker: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
@@ -81,10 +79,6 @@ const REWARD_VAULT_ABI = [
   "function claim()",
 ];
 
-const BOOSTNFT_ABI = [
-  "function getBoost(address user) view returns (tuple(uint32 holdReduction,uint32 cooldownReduction), uint8 rarity)"
-];
-
 /* =========================
    STATE
 ========================= */
@@ -129,8 +123,6 @@ let protocolSnapshot = {
   lastRefresh: null,
   connectedMon: null,
 };
-
-let boostNftRead = null;
 
 /* =========================
    DOM helpers
@@ -231,28 +223,6 @@ function fmtTiny(x, decimals = 10) {
   return n.toFixed(decimals).replace(/\.?0+$/, "");
 }
 
-async function getBoostStatus(addr) {
-  if (!boostNftRead || !addr) return null;
-
-  try {
-    const result = await boostNftRead.getBoost(addr);
-    const rarity = Number(result[1]); // uint8
-
-    // Enum:
-    // 0 = NONE
-    // 1 = COMMON
-    // 2 = RARE
-
-    if (rarity === 1) return "COMMON";
-    if (rarity === 2) return "RARE";
-
-    return null;
-  } catch (e) {
-    console.warn("getBoost() failed:", e.message);
-    return null;
-  }
-}
-
 
 /* =========================
    new function
@@ -351,91 +321,34 @@ function initWatchedSlider() {
   setActive(0);
   restart();
 }
+
 /* =========================
-   Chain read setup (CLEAN + SAFE)
+   Chain read setup
 ========================= */
 async function initReadSide() {
-
-  if (!CONFIG.rpcUrls || !CONFIG.rpcUrls.length) {
-    throw new Error("No RPC URLs configured in CONFIG.rpcUrls");
-  }
-
-  // Build providers from config
-  const providers = CONFIG.rpcUrls.map(
-    (url) =>
-      new ethers.JsonRpcProvider(
-        url,
-        {
-          name: CONFIG.chainName,
-          chainId: CONFIG.chainIdDec,
-        },
-        { staticNetwork: true }
-      )
+  readProvider = new ethers.FallbackProvider(
+    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url)),
+    null,
+    { quorum: 1 }
   );
 
-  readProvider = new ethers.FallbackProvider(providers, 1);
-
-  // Validate network
-  const net = await readProvider.getNetwork();
-  if (Number(net.chainId) !== CONFIG.chainIdDec) {
-    throw new Error(
-      `Wrong network: expected ${CONFIG.chainIdDec}, got ${net.chainId}`
-    );
-  }
-
-  /* ---------- Contracts ---------- */
-
-  tokenRead = new ethers.Contract(
-    CONFIG.mmmToken,
-    ERC20_ABI,
-    readProvider
-  );
+  tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
+  MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
+  rewardVaultRead = new ethers.Contract(CONFIG.rewardVault, REWARD_VAULT_ABI, readProvider);
+  routerRead = new ethers.Contract(CONFIG.router, ROUTER_ABI, readProvider);
 
   try {
-    MMM_DECIMALS = Number(await tokenRead.decimals());
-  } catch {
-    MMM_DECIMALS = 18;
-  }
-
-  rewardVaultRead = new ethers.Contract(
-    CONFIG.rewardVault,
-    REWARD_VAULT_ABI,
-    readProvider
-  );
-
-  routerRead = new ethers.Contract(
-    CONFIG.router,
-    ROUTER_ABI,
-    readProvider
-  );
-
-  if (CONFIG.wmon && CONFIG.pair) {
     EFFECTIVE_WMON = CONFIG.wmon;
     pairAddress = CONFIG.pair;
-
-    wmonRead = new ethers.Contract(
-      EFFECTIVE_WMON,
-      WMON_ABI,
-      readProvider
-    );
-
-    pairRead = new ethers.Contract(
-      pairAddress,
-      PAIR_ABI,
-      readProvider
-    );
+    wmonRead = new ethers.Contract(EFFECTIVE_WMON, WMON_ABI, readProvider);
+    pairRead = new ethers.Contract(pairAddress, PAIR_ABI, readProvider);
+  } catch (e) {
+    console.warn("Could not read factory from router:", e);
   }
 
-  if (CONFIG.boostNFT) {
-    boostNftRead = new ethers.Contract(
-      CONFIG.boostNFT,
-      BOOSTNFT_ABI,
-      readProvider
-    );
-  }
-
-  logInfo("Read-side initialized.");
+  logInfo("Read-side initialization complete");
 }
+
 /* =========================
    Connect wallet
 ========================= */
@@ -554,8 +467,10 @@ async function getWalletEligibility(addr) {
   const nowTs = Math.floor(Date.now() / 1000);
 
   try {
+    // 1️⃣ Load global vault params ONCE (cached)
     await loadVaultParams();
 
+    // 2️⃣ Per-wallet calls ONLY (reduced set)
     const [
       balRaw,
       pendingRaw,
@@ -578,7 +493,9 @@ async function getWalletEligibility(addr) {
 
     const minBalance = VAULT_PARAMS.minBalance;
 
-    /* HOLD */
+    /* -------------------------
+       HOLD (only before first claim)
+    -------------------------- */
     let holdRemaining = 0;
 
     if (
@@ -592,7 +509,9 @@ async function getWalletEligibility(addr) {
       holdRemaining = Math.max(0, holdEnd - nowTs);
     }
 
-    /* COOLDOWN */
+    /* -------------------------
+       COOLDOWN (after claim)
+    -------------------------- */
     let cooldownRemaining = 0;
 
     if (lastClaimAt > 0n) {
@@ -620,23 +539,15 @@ async function getWalletEligibility(addr) {
     };
 
   } catch (e) {
-    console.warn("[getWalletEligibility fail-soft]", addr, e?.message);
-
-    // 🔥 Critical: never return null
-    // This prevents watched wallets from disappearing
-
-    return {
-      bal: 0,
-      pending: 0,
-      holdRemaining: 0,
-      cooldownRemaining: 0,
-      canClaim: false,
-      hasMinBalance: false,
-      lastClaimAt: 0,
-      lastNonZeroAt: 0,
-    };
+    // IMPORTANT: fail-soft, do NOT lie with zeros
+    if (!String(e.message).includes("Too Many Requests")) {
+      console.warn("[getWalletEligibility skipped]", addr, e.message);
+    }
+    
+    return null;
   }
 }
+
 /* =========================
    Claim logic (RewardVault v1)
 ========================= */
@@ -880,7 +791,7 @@ function updateKPIs() {
 }
 
 /* =========================
-   Connected wallet card (UPDATED LAYOUT)
+   Connected wallet card (FIXED)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -891,75 +802,52 @@ async function renderConnectedCard() {
     return;
   }
 
-  const [eligibility, boostStatus] = await Promise.all([
-    getWalletEligibility(connectedAddress),
-    getBoostStatus(connectedAddress),
-  ]);
+  const eligibility = await getWalletEligibility(connectedAddress);
+  if (!eligibility) return; // or `continue` in a loop
 
-  if (!eligibility) {
-    container.innerHTML = "";
-    return;
-  }
-
-  /* ---------- HOLD + COOLDOWN TEXT ---------- */
 
   const holdText =
     !eligibility.hasMinBalance
       ? `<span class="warn">Insufficient balance</span>`
       : eligibility.holdRemaining === 0
         ? `<span class="ok">Ready</span>`
-        : `<span class="mono">${formatCountdown(eligibility.holdRemaining)}</span>`;
+        : formatCountdown(eligibility.holdRemaining);
 
   const cooldownText =
     eligibility.cooldownRemaining === 0
       ? `<span class="ok">Ready</span>`
-      : `<span class="mono">${formatCountdown(eligibility.cooldownRemaining)}</span>`;
-
-  /* ---------- NFT BADGE ---------- */
-
-  const nftBadgeMap = {
-    COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
-    RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
-  };
-
-  const nftBadge = nftBadgeMap[boostStatus] || "";
-
-  /* ---------- RIGHT SIDE STATUS ---------- */
-
-  const eligibilityButton = eligibility.canClaim
-    ? `
-      <button class="btn btn--primary"
-              onclick="claimRewards('${connectedAddress}')">
-        <i class="fas fa-hand-holding-dollar"></i> Claim
-      </button>`
-    : `
-      <button class="btn btn--ghost" disabled>
-        <i class="fas fa-clock"></i> Not eligible
-      </button>`;
-
-  /* ---------- RENDER ---------- */
+      : formatCountdown(eligibility.cooldownRemaining);
 
   container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
-
         <div class="wallet-id">
-          <h3 class="wallet-name">Connected Wallet</h3>
-          <div class="wallet-addr mono">
-            ${escapeHtml(connectedAddress)}
-            <button class="icon-btn"
-                    onclick="copyText('${connectedAddress}')"
-                    title="Copy address">
-              <i class="fas fa-copy"></i>
-            </button>
+          <div class="wallet-mark">W</div>
+          <div style="min-width:0;">
+            <h3 class="wallet-name">Connected Wallet</h3>
+            <div class="wallet-addr mono">
+              ${escapeHtml(connectedAddress)}
+              <button class="icon-btn"
+                      onclick="copyText('${connectedAddress}')"
+                      title="Copy address">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="wallet-status">
-          ${nftBadge}
-          ${eligibilityButton}
-        </div>
-
+        ${
+          eligibility.canClaim
+            ? `
+          <button class="btn btn--primary"
+                  onclick="claimRewards('${connectedAddress}')">
+            <i class="fas fa-hand-holding-dollar"></i> Claim
+          </button>`
+            : `
+          <button class="btn btn--ghost" disabled>
+            <i class="fas fa-clock"></i> Not eligible
+          </button>`
+        }
       </div>
 
       <div class="wallet-metrics">
@@ -988,7 +876,7 @@ async function renderConnectedCard() {
 }
 
 /* =========================
-   Watched wallets (NFT SUPPORT ADDED)
+   Watched wallets (FIXED)
 ========================= */
 async function renderWallets() {
   const container = $("walletsContainer");
@@ -1005,39 +893,9 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
+    const eligibility = await getWalletEligibility(w.address);
+    if (!eligibility) continue;
 
-    const [eligibility, boostStatus] = await Promise.all([
-      getWalletEligibility(w.address),
-      getBoostStatus(w.address)
-    ]);
-
-    if (!eligibility) {
-      html += `
-        <div class="wallet-card">
-          <div class="wallet-top">
-            <div class="wallet-id">
-              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-              <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
-            </div>
-          </div>
-          <div style="padding:12px; color:rgba(255,255,255,0.5);">
-            Unable to fetch on-chain data (RPC busy)
-          </div>
-        </div>
-      `;
-      continue;
-    }
-
-    /* ---------- NFT BADGE ---------- */
-
-    const nftBadgeMap = {
-      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
-      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
-    };
-
-    const nftBadge = nftBadgeMap[boostStatus] || "";
-
-    /* ---------- HOLD / COOLDOWN ---------- */
 
     const holdText =
       !eligibility.hasMinBalance
@@ -1054,8 +912,10 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
-
           <div class="wallet-id">
+            <div class="wallet-mark">
+              ${escapeHtml(w.name.charAt(0).toUpperCase())}
+            </div>
             <div style="min-width:0;">
               <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
               <div class="wallet-addr mono">
@@ -1069,15 +929,11 @@ async function renderWallets() {
             </div>
           </div>
 
-          <div class="wallet-status">
-            ${nftBadge}
-            <button class="icon-btn"
-                    onclick="removeWallet('${w.id}')"
-                    title="Remove">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-
+          <button class="icon-btn"
+                  onclick="removeWallet('${w.id}')"
+                  title="Remove">
+            <i class="fas fa-trash"></i>
+          </button>
         </div>
 
         <div class="wallet-metrics">
@@ -1648,13 +1504,6 @@ async function execSwap() {
    Refresh
 ========================= */
 async function refreshAll() {
-
-  // 🔒 Safety guard — prevents decimals undefined crash
-  if (!tokenRead || !rewardVaultRead) {
-    console.warn("Read side not ready yet.");
-    return;
-  }
-
   if (refreshInFlight) return;
   refreshInFlight = true;
 
@@ -1778,37 +1627,53 @@ function bindUI() {
    Boot
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  try {
+  const mmmLink = $("mmmLink");
+  const poolLink = $("poolLink");
 
-    loadData();
-    bindUI();
-    setHeaderConnectionUI(false);
+  if (mmmLink) {
+    mmmLink.textContent = CONFIG.mmmToken;
+    mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
+  }
 
-    if (wallets.length === 0 && CONFIG.defaultWatch?.length) {
-      wallets = CONFIG.defaultWatch.map((a, i) =>
-        mkWallet(`Watched #${i + 1}`, a)
-      );
-      saveData();
-    }
+  const trackerLink = $("trackerLink");
+  if (trackerLink) {
+    trackerLink.textContent = CONFIG.tracker;
+    trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
+  }
 
-    await initReadSide(); // 🔥 CRITICAL — wait for contracts
+  // poolLink is set AFTER initReadSide (further below) so pairAddress is populated
 
-    await refreshAll();   // 🔥 AFTER init
+  initWatchedSlider();
+  loadData();
 
-    // Attempt silent wallet reconnect
-    if (window.ethereum) {
-      const accounts = await window.ethereum.request({
-        method: "eth_accounts",
-      });
+  if (wallets.length === 0 && CONFIG.defaultWatch?.length) {
+    wallets = CONFIG.defaultWatch.map((a, i) => mkWallet(`Watched #${i + 1}`, a));
+    saveData();
+  }
 
-      if (accounts?.length) {
-        await connectWallet(true);
-      }
-    }
+  bindUI();
+  setHeaderConnectionUI(false);
 
-  } catch (e) {
-    console.error("Boot error:", e);
-    alert("App failed to initialize. Check console.");
+  await initReadSide();
+
+  if (poolLink && pairAddress) {
+    poolLink.textContent = pairAddress;
+    poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
+  }
+
+  renderConnectedCard();
+  renderWallets();
+  renderActions();
+  updateKPIs();
+  await updateSwapQuoteAndButtons();
+
+  await refreshAll();
+
+  if (window.ethereum) {
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      if (accounts?.length) await connectWallet(true);
+    } catch (_) {}
   }
 });
 
