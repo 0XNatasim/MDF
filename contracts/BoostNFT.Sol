@@ -218,8 +218,8 @@ contract BoostNFT is ERC721, Ownable {
         view
         returns (BoostConfig memory config, uint8 rarity)
     {
-        Rarity r = bestBoostOf[user];
-        config = boostFor[r];
-        rarity = uint8(r);
+            Rarity r = bestBoostOf[user];
+            config = boostFor[r];
+            rarity = uint8(r);
     }
 }

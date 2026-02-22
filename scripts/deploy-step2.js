@@ -217,8 +217,8 @@ async function main() {
   /* ============================================================
      13. Add Initial Liquidity (manual seed, bypasses router)
   ============================================================ */
-  const amountMMM = ethers.parseUnits("3000", 18);
-  const amountETH = ethers.parseEther("3");
+  const amountMMM = ethers.parseUnits("10000", 18);
+  const amountETH = ethers.parseEther("10");
 
   const pair = await ethers.getContractAt("UniswapV2Pair", PAIR_ADDR);
 
