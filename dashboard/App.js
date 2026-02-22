@@ -19,13 +19,13 @@ const CONFIG = {
   rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
 // === CONTRACTS (MONAD TESTNET) ===
-mmmToken: "0x4AbCCb4278f08db1670851064B2b984e17eEdf8E"
-rewardVault: "0xFB64ED43DD26fEAde58A9f530ecAF9e30Fb66d0a"
-taxVault: "0xF5D10CC3DdcA65Bec40F370E1d37D9001C8a9544"
-router: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
-pair: "0x1903333faebea78CE8659D23a47b10012416667C"
-wmon: "0xE7b0bA4Afca4e2469A7Fd496AE7EC7a90cC17dF3"
-tracker: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
+mmmToken: "0x29cf40de9830e15d94bD1E383fE8Af9693be33e9",
+rewardVault: "0xfCb257b0aa2F0e716e661927c35001b89c5dA6ad",
+taxVault: "0x68e59ec7cfDbeaA56363FbE52440E5D7937AAB61",
+router: "0xAc8c142B6becCe906219a4A3cA8C6bde8eFBAf74",
+pair: "0x1576a58f083fD0ee24b5dC3270e785Ae8D9bbCF7",
+wmon: "0xE7b0bA4Afca4e2469A7Fd496AE7EC7a90cC17dF3",
+tracker: "0xAc8c142B6becCe906219a4A3cA8C6bde8eFBAf74",
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
