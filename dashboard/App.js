@@ -828,7 +828,7 @@ function updateKPIs() {
 
 
 /* =========================
-   Connected wallet card (FINAL CLEAN VERSION)
+   Connected wallet card (NFT RIGHT SIDE)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -872,40 +872,40 @@ async function renderConnectedCard() {
 
   const nftBadge = nftBadgeMap[boostStatus] || "";
 
+  const actionButton = eligibility.canClaim
+    ? `
+      <button class="btn btn--primary"
+              onclick="claimRewards('${connectedAddress}')">
+        <i class="fas fa-hand-holding-dollar"></i> Claim
+      </button>`
+    : `
+      <button class="btn btn--ghost" disabled>
+        <i class="fas fa-clock"></i> Not eligible
+      </button>`;
+
   /* ---------- RENDER ---------- */
 
   container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
+
         <div class="wallet-id">
-          <div class="wallet-mark">W</div>
-          <div style="min-width:0;">
-            <h3 class="wallet-name">
-              Connected Wallet ${nftBadge}
-            </h3>
-            <div class="wallet-addr mono">
-              ${escapeHtml(connectedAddress)}
-              <button class="icon-btn"
-                      onclick="copyText('${connectedAddress}')"
-                      title="Copy address">
-                <i class="fas fa-copy"></i>
-              </button>
-            </div>
+          <h3 class="wallet-name">Connected Wallet</h3>
+          <div class="wallet-addr mono">
+            ${escapeHtml(connectedAddress)}
+            <button class="icon-btn"
+                    onclick="copyText('${connectedAddress}')"
+                    title="Copy address">
+              <i class="fas fa-copy"></i>
+            </button>
           </div>
         </div>
 
-        ${
-          eligibility.canClaim
-            ? `
-              <button class="btn btn--primary"
-                      onclick="claimRewards('${connectedAddress}')">
-                <i class="fas fa-hand-holding-dollar"></i> Claim
-              </button>`
-            : `
-              <button class="btn btn--ghost" disabled>
-                <i class="fas fa-clock"></i> Not eligible
-              </button>`
-        }
+        <div class="wallet-status">
+          ${nftBadge}
+          ${actionButton}
+        </div>
+
       </div>
 
       <div class="wallet-metrics">
@@ -933,7 +933,7 @@ async function renderConnectedCard() {
   `;
 }
 /* =========================
-   Watched wallets (FIXED)
+   Watched wallets (NFT RIGHT SIDE)
 ========================= */
 async function renderWallets() {
   const container = $("walletsContainer");
@@ -950,9 +950,20 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
-    const eligibility = await getWalletEligibility(w.address);
+
+    const [eligibility, boostStatus] = await Promise.all([
+      getWalletEligibility(w.address),
+      getBoostStatus(w.address)
+    ]);
+
     if (!eligibility) continue;
 
+    const nftBadgeMap = {
+      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+    };
+
+    const nftBadge = nftBadgeMap[boostStatus] || "";
 
     const holdText =
       !eligibility.hasMinBalance
@@ -969,28 +980,28 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
+
           <div class="wallet-id">
-            <div class="wallet-mark">
-              ${escapeHtml(w.name.charAt(0).toUpperCase())}
-            </div>
-            <div style="min-width:0;">
-              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-              <div class="wallet-addr mono">
-                ${escapeHtml(w.address)}
-                <button class="icon-btn"
-                        onclick="copyText('${w.address}')"
-                        title="Copy address">
-                  <i class="fas fa-copy"></i>
-                </button>
-              </div>
+            <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+            <div class="wallet-addr mono">
+              ${escapeHtml(w.address)}
+              <button class="icon-btn"
+                      onclick="copyText('${w.address}')"
+                      title="Copy address">
+                <i class="fas fa-copy"></i>
+              </button>
             </div>
           </div>
 
-          <button class="icon-btn"
-                  onclick="removeWallet('${w.id}')"
-                  title="Remove">
-            <i class="fas fa-trash"></i>
-          </button>
+          <div class="wallet-status">
+            ${nftBadge}
+            <button class="icon-btn"
+                    onclick="removeWallet('${w.id}')"
+                    title="Remove">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+
         </div>
 
         <div class="wallet-metrics">

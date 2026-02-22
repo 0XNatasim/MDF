@@ -319,26 +319,10 @@ body {
   flex: 1 1 0;
 }
 
-.wallet-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
-  border: 1px solid rgba(255,255,255,0.14);
-  flex-shrink: 0;
-  color: rgba(255,255,255,0.92);
-}
-
-.wallet-mark--btn {
-  cursor: pointer;
-  transition: all 140ms ease;
-}
-.wallet-mark--btn:hover {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.20);
+.wallet-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .wallet-name {
