@@ -18,14 +18,16 @@ const CONFIG = {
   nativeSymbol: "MON",
   rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
-// === CONTRACTS (MONAD TESTNET) ===
-mmmToken: "0x4AbCCb4278f08db1670851064B2b984e17eEdf8E"
-rewardVault: "0xFB64ED43DD26fEAde58A9f530ecAF9e30Fb66d0a"
-taxVault: "0xF5D10CC3DdcA65Bec40F370E1d37D9001C8a9544"
-router: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
-pair: "0x1903333faebea78CE8659D23a47b10012416667C"
-wmon: "0xE7b0bA4Afca4e2469A7Fd496AE7EC7a90cC17dF3"
-tracker: "0x83a3eAC973381Cb4163D20bf891982FC3863c5D3"
+  // === CONTRACTS (MONAD TESTNET) ===
+  mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
+  rewardVault: "0x4d5c39a5270E2Dd37C89008E368A15894F6CA89D",
+  taxVault: "0x077531da7E89f6E7C9ADc23a88115ADdC143B8D5",
+  router: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
+  pair: "0xB1CD16f4BA14FC584E2a55AEA9c408CE3Abd3a02",
+  wmon: "0x8673a8605b3e96123e788ce41E8F269179Bff067",
+  tracker: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
+  boostNFT: "0x213811B94bD180627B43EC4a54e4a6e5D510980d",
+
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
   LS_WALLETS: "mmm_watch_wallets",
@@ -79,6 +81,10 @@ const REWARD_VAULT_ABI = [
   "function claim()",
 ];
 
+const BOOSTNFT_ABI = [
+  "function getBoost(address user) view returns (tuple(uint32 holdReduction,uint32 cooldownReduction), uint8 rarity)"
+];
+
 /* =========================
    STATE
 ========================= */
@@ -123,6 +129,8 @@ let protocolSnapshot = {
   lastRefresh: null,
   connectedMon: null,
 };
+
+let boostNftRead = null;
 
 /* =========================
    DOM helpers
@@ -221,6 +229,28 @@ function fmtTiny(x, decimals = 10) {
   const n = Number(x);
   if (!Number.isFinite(n) || n <= 0) return "—";
   return n.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
+async function getBoostStatus(addr) {
+  if (!boostNftRead || !addr) return null;
+
+  try {
+    const result = await boostNftRead.getBoost(addr);
+    const rarity = Number(result[1]); // uint8
+
+    // Enum:
+    // 0 = NONE
+    // 1 = COMMON
+    // 2 = RARE
+
+    if (rarity === 1) return "COMMON";
+    if (rarity === 2) return "RARE";
+
+    return null;
+  } catch (e) {
+    console.warn("getBoost() failed:", e.message);
+    return null;
+  }
 }
 
 
@@ -345,6 +375,12 @@ async function initReadSide() {
   } catch (e) {
     console.warn("Could not read factory from router:", e);
   }
+
+  boostNftRead = new ethers.Contract(
+    CONFIG.boostNFT,
+    BOOSTNFT_ABI,
+    readProvider
+  );
 
   logInfo("Read-side initialization complete");
 }
@@ -790,8 +826,9 @@ function updateKPIs() {
   }
 }
 
+
 /* =========================
-   Connected wallet card (FIXED)
+   Connected wallet card (FINAL CLEAN VERSION)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -802,21 +839,40 @@ async function renderConnectedCard() {
     return;
   }
 
-  const eligibility = await getWalletEligibility(connectedAddress);
-  if (!eligibility) return; // or `continue` in a loop
+  const [eligibility, boostStatus] = await Promise.all([
+    getWalletEligibility(connectedAddress),
+    getBoostStatus(connectedAddress),
+  ]);
 
+  if (!eligibility) {
+    container.innerHTML = "";
+    return;
+  }
+
+  /* ---------- HOLD + COOLDOWN TEXT ---------- */
 
   const holdText =
     !eligibility.hasMinBalance
       ? `<span class="warn">Insufficient balance</span>`
       : eligibility.holdRemaining === 0
         ? `<span class="ok">Ready</span>`
-        : formatCountdown(eligibility.holdRemaining);
+        : `<span class="mono">${formatCountdown(eligibility.holdRemaining)}</span>`;
 
   const cooldownText =
     eligibility.cooldownRemaining === 0
       ? `<span class="ok">Ready</span>`
-      : formatCountdown(eligibility.cooldownRemaining);
+      : `<span class="mono">${formatCountdown(eligibility.cooldownRemaining)}</span>`;
+
+  /* ---------- NFT BADGE ---------- */
+
+  const nftBadgeMap = {
+    COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+    RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+  };
+
+  const nftBadge = nftBadgeMap[boostStatus] || "";
+
+  /* ---------- RENDER ---------- */
 
   container.innerHTML = `
     <div class="wallet-card">
@@ -824,7 +880,9 @@ async function renderConnectedCard() {
         <div class="wallet-id">
           <div class="wallet-mark">W</div>
           <div style="min-width:0;">
-            <h3 class="wallet-name">Connected Wallet</h3>
+            <h3 class="wallet-name">
+              Connected Wallet ${nftBadge}
+            </h3>
             <div class="wallet-addr mono">
               ${escapeHtml(connectedAddress)}
               <button class="icon-btn"
@@ -839,14 +897,14 @@ async function renderConnectedCard() {
         ${
           eligibility.canClaim
             ? `
-          <button class="btn btn--primary"
-                  onclick="claimRewards('${connectedAddress}')">
-            <i class="fas fa-hand-holding-dollar"></i> Claim
-          </button>`
+              <button class="btn btn--primary"
+                      onclick="claimRewards('${connectedAddress}')">
+                <i class="fas fa-hand-holding-dollar"></i> Claim
+              </button>`
             : `
-          <button class="btn btn--ghost" disabled>
-            <i class="fas fa-clock"></i> Not eligible
-          </button>`
+              <button class="btn btn--ghost" disabled>
+                <i class="fas fa-clock"></i> Not eligible
+              </button>`
         }
       </div>
 
@@ -874,7 +932,6 @@ async function renderConnectedCard() {
     </div>
   `;
 }
-
 /* =========================
    Watched wallets (FIXED)
 ========================= */

@@ -704,4 +704,25 @@ body {
 /* Scrollable table wrapper always clips overflow */
 .table-wrap { overflow-x: auto; }
 
+/* nft-badge */
+.nft-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
 
+.nft-common {
+  background: rgba(120,120,120,0.15);
+  color: #138a27;
+  border: 1px solid rgba(200,200,200,0.3);
+}
+
+.nft-rare {
+  background: rgba(110,0,255,0.15);
+  color: #0591c9;
+  border: 1px solid rgba(180,130,255,0.5);
+}
