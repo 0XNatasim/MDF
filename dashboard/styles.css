@@ -304,7 +304,7 @@ body {
 
 .wallet-id {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
   min-width: 0;
   /* critical: let text content shrink so long addresses don't push layout */
@@ -733,5 +733,4 @@ body {
   background: rgba(110,0,255,0.15);
   color: #0591c9;
   border: 1px solid rgba(180,130,255,0.5);
-}
 }
