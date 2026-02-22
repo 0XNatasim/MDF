@@ -842,12 +842,12 @@ async function renderConnectedCard() {
   }
 
   const [eligibility, boostStatus] = await Promise.all([
-    getWalletEligibility(connectedAddress),
-    getBoostStatus(connectedAddress),
+    getWalletEligibility(connectedAddress).catch(() => null),
+    getBoostStatus(connectedAddress).catch(() => null),
   ]);
 
   if (!eligibility) {
-    container.innerHTML = "";
+    // RPC failed — leave the card as-is rather than blanking it
     return;
   }
 
@@ -953,12 +953,11 @@ async function renderWallets() {
 
   for (const w of wallets) {
 
+    // Individual .catch() ensures one bad RPC never drops the entire card
     const [eligibility, boostStatus] = await Promise.all([
-      getWalletEligibility(w.address),
-      getBoostStatus(w.address)
+      getWalletEligibility(w.address).catch(() => null),
+      getBoostStatus(w.address).catch(() => null),
     ]);
-
-    if (!eligibility) continue;
 
     const nftBadgeMap = {
       COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
@@ -966,6 +965,43 @@ async function renderWallets() {
     };
 
     const nftBadge = nftBadgeMap[boostStatus] || "";
+
+    // If eligibility RPC failed, render the card in a degraded state instead of dropping it
+    if (!eligibility) {
+      html += `
+        <div class="wallet-card">
+          <div class="wallet-top">
+            <div class="wallet-id">
+              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+              <div class="wallet-addr mono">
+                ${escapeHtml(w.address)}
+                <button class="icon-btn" onclick="copyText('${w.address}')" title="Copy address">
+                  <i class="fas fa-copy"></i>
+                </button>
+              </div>
+            </div>
+            <div class="wallet-status">
+              ${nftBadge}
+              <button class="icon-btn" onclick="removeWallet('${w.id}')" title="Remove">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="wallet-metrics">
+            <div class="metric">
+              <span class="k">Status:</span>
+              <span class="v" style="color:rgba(255,200,80,0.85); font-size:12px;">
+                <i class="fas fa-triangle-exclamation"></i> RPC error — tap refresh to retry
+              </span>
+            </div>
+          </div>
+          <button class="btn btn--ghost btn--block" disabled>
+            <i class="fas fa-clock"></i> Not eligible yet
+          </button>
+        </div>
+      `;
+      continue;
+    }
 
     const holdText =
       !eligibility.hasMinBalance
