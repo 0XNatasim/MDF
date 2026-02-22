@@ -716,12 +716,14 @@ body {
 }
 
 .nft-common {
-  background: #6b7280;
-  color: white;
+  background: rgba(120,120,120,0.15);
+  color: #138a27;
+  border: 1px solid rgba(200,200,200,0.3);
 }
 
 .nft-rare {
-  background: linear-gradient(90deg, #7c3aed, #a855f7);
-  color: white;
-  box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  background: rgba(110,0,255,0.15);
+  color: #0591c9;
+  border: 1px solid rgba(180,130,255,0.5);
+}
 }
