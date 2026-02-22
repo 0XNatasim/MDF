@@ -319,10 +319,26 @@ body {
   flex: 1 1 0;
 }
 
-.wallet-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.wallet-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
+  border: 1px solid rgba(255,255,255,0.14);
+  flex-shrink: 0;
+  color: rgba(255,255,255,0.92);
+}
+
+.wallet-mark--btn {
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.wallet-mark--btn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.20);
 }
 
 .wallet-name {
@@ -342,18 +358,11 @@ body {
   gap: 6px;
   align-items: center;
   min-width: 0;
-  word-break: break-all;   /* break 0x... address mid-string on mobile */
+  word-break: break-all;   /* break 0x... address mid-string */
   overflow-wrap: anywhere;
 }
 
-@media (min-width: 1024px) {
-  .wallet-addr {
-    word-break: break-word;
-    overflow-wrap: break-word;
-  }
-}
-
-.wallet-metrics { display: grid; gap: 10px; margin-top: 14px; margin-bottom: 14px; }
+.wallet-metrics { display: grid; gap: 12px; }
 
 .metric {
   display: flex;
@@ -383,27 +392,11 @@ body {
   color: rgba(0,255,170,0.95);
 }
 
-.badge--bad {
-  border-color: rgba(255,95,130,0.30);
-  background: rgba(255,95,130,0.08);
-  color: rgba(255,110,140,0.95);
-}
-
 .badge--warn {
-  border-color: rgba(255,200,80,0.25);
-  background: rgba(255,200,80,0.06);
-  color: rgba(255,210,90,0.90);
-}
-
-.badge--neutral {
   border-color: rgba(255,255,255,0.16);
   background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.78);
 }
-
-/* Inline eligibility status text */
-.ok   { color: rgba(0,255,170,0.95); font-weight: 700; }
-.warn { color: rgba(255,200,80,0.90); font-weight: 700; }
 
 .icon-btn {
   width: 38px;
@@ -677,18 +670,9 @@ body {
     top: 72px; /* topbar height + 8px breathing room */
     max-height: calc(100vh - 90px);
     overflow-y: auto;
-    scrollbar-width: thin; /* Firefox — thin instead of none */
-    scrollbar-color: rgba(255,255,255,0.12) transparent;
+    scrollbar-width: none; /* Firefox */
   }
-  .dash-right::-webkit-scrollbar { width: 4px; }
-  .dash-right::-webkit-scrollbar-track { background: transparent; }
-  .dash-right::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.14);
-    border-radius: 999px;
-  }
-  .dash-right::-webkit-scrollbar-thumb:hover {
-    background: rgba(255,255,255,0.22);
-  }
+  .dash-right::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
   /* Ops side-by-side only when left col is wide enough */
   .ops { grid-template-columns: 1fr 1fr; }
@@ -732,13 +716,12 @@ body {
 }
 
 .nft-common {
-  background: rgba(140,140,140,0.15);
-  color: rgba(200,200,200,0.92);
-  border: 1px solid rgba(200,200,200,0.28);
+  background: #6b7280;
+  color: white;
 }
 
 .nft-rare {
-  background: rgba(130,60,255,0.18);
-  color: rgba(200,160,255,0.95);
-  border: 1px solid rgba(160,100,255,0.45);
+  background: linear-gradient(90deg, #7c3aed, #a855f7);
+  color: white;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
 }

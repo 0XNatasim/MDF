@@ -16,13 +16,7 @@ const CONFIG = {
   chainIdHex: "0x279F",
   chainName: "Monad Testnet",
   nativeSymbol: "MON",
-  // All 3 RPCs — FallbackProvider will try them in priority order
-  // and automatically failover if one is rate-limited or down
-  rpcUrls: [
-    { url: "https://testnet-rpc.monad.xyz",        priority: 1, stallTimeout: 2000 },
-    { url: "https://rpc.ankr.com/monad_testnet",   priority: 2, stallTimeout: 2500 },
-    { url: "https://rpc-testnet.monadinfra.com",   priority: 3, stallTimeout: 3000 },
-  ],
+  rpcUrls: ["https://testnet-rpc.monad.xyz"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
   mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
@@ -362,23 +356,11 @@ function initWatchedSlider() {
    Chain read setup
 ========================= */
 async function initReadSide() {
-  // Build provider list — entries can be plain URL strings or {url, priority, stallTimeout} objects
-  const providers = CONFIG.rpcUrls.map((entry) => {
-    const isObj = typeof entry === "object";
-    const url   = isObj ? entry.url      : entry;
-    const prio  = isObj ? entry.priority : 1;
-    const stall = isObj ? entry.stallTimeout : 2000;
-    return {
-      provider: new ethers.JsonRpcProvider(url),
-      priority: prio,
-      stallTimeout: stall,
-      weight: 1,
-    };
-  });
-
-  // quorum: 1 — first provider to respond wins; others act as hot standbys
-  readProvider = new ethers.FallbackProvider(providers, null, { quorum: 1 });
-  logInfo("FallbackProvider initialized with", providers.length, "RPCs");
+  readProvider = new ethers.FallbackProvider(
+    CONFIG.rpcUrls.map((url) => new ethers.JsonRpcProvider(url)),
+    null,
+    { quorum: 1 }
+  );
 
   tokenRead = new ethers.Contract(CONFIG.mmmToken, ERC20_ABI, readProvider);
   MMM_DECIMALS = await tokenRead.decimals().catch(() => 18);
@@ -463,7 +445,7 @@ async function switchOrAddChain() {
                 symbol: CONFIG.nativeSymbol,
                 decimals: 18,
               },
-              rpcUrls: CONFIG.rpcUrls.map(e => typeof e === 'object' ? e.url : e),
+              rpcUrls: CONFIG.rpcUrls,
               blockExplorerUrls: [CONFIG.explorerBase],
             },
           ],
@@ -719,10 +701,8 @@ async function updatePoolReservesUI() {
 
     setText("poolMmmReserves", fmtCompact(mmmHuman, 2));
     setText("poolWmonReserves", fmtCompact(wmonHuman, 2));
-    // Both sides of the pool are worth the same in MON (AMM invariant)
-    // MON-equivalent of MMM side = WMON reserve (x*y=k means equal value at spot price)
-    setText("poolMmmValue", `≈${fmtCompact(wmonHuman, 2)} MON equiv.`);
-    setText("poolWmonValue", `≈${fmtCompact(wmonHuman, 2)} MON`);
+    setText("poolMmmValue", `~${fmtCompact(wmonHuman, 2)} MON`);
+    setText("poolWmonValue", `~${fmtCompact(wmonHuman, 2)} MON`);
     setText("poolMmmPct", `${mmmPct}%`);
     setText("poolWmonPct", `${wmonPct}%`);
   } catch (e) {
@@ -848,7 +828,7 @@ function updateKPIs() {
 
 
 /* =========================
-   Connected wallet card (NFT RIGHT SIDE)
+   Connected wallet card (FINAL CLEAN VERSION)
 ========================= */
 async function renderConnectedCard() {
   const container = $("connectedCard");
@@ -860,12 +840,12 @@ async function renderConnectedCard() {
   }
 
   const [eligibility, boostStatus] = await Promise.all([
-    getWalletEligibility(connectedAddress).catch(() => null),
-    getBoostStatus(connectedAddress).catch(() => null),
+    getWalletEligibility(connectedAddress),
+    getBoostStatus(connectedAddress),
   ]);
 
   if (!eligibility) {
-    // RPC failed — leave the card as-is rather than blanking it
+    container.innerHTML = "";
     return;
   }
 
@@ -892,40 +872,40 @@ async function renderConnectedCard() {
 
   const nftBadge = nftBadgeMap[boostStatus] || "";
 
-  const actionButton = eligibility.canClaim
-    ? `
-      <button class="btn btn--primary"
-              onclick="claimRewards('${connectedAddress}')">
-        <i class="fas fa-hand-holding-dollar"></i> Claim
-      </button>`
-    : `
-      <button class="btn btn--ghost" disabled>
-        <i class="fas fa-clock"></i> Not eligible
-      </button>`;
-
   /* ---------- RENDER ---------- */
 
   container.innerHTML = `
     <div class="wallet-card">
       <div class="wallet-top">
-
         <div class="wallet-id">
-          <h3 class="wallet-name">Connected Wallet</h3>
-          <div class="wallet-addr mono">
-            ${escapeHtml(connectedAddress)}
-            <button class="icon-btn"
-                    onclick="copyText('${connectedAddress}')"
-                    title="Copy address">
-              <i class="fas fa-copy"></i>
-            </button>
+          <div class="wallet-mark">W</div>
+          <div style="min-width:0;">
+            <h3 class="wallet-name">
+              Connected Wallet ${nftBadge}
+            </h3>
+            <div class="wallet-addr mono">
+              ${escapeHtml(connectedAddress)}
+              <button class="icon-btn"
+                      onclick="copyText('${connectedAddress}')"
+                      title="Copy address">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="wallet-status">
-          ${nftBadge}
-          ${actionButton}
-        </div>
-
+        ${
+          eligibility.canClaim
+            ? `
+              <button class="btn btn--primary"
+                      onclick="claimRewards('${connectedAddress}')">
+                <i class="fas fa-hand-holding-dollar"></i> Claim
+              </button>`
+            : `
+              <button class="btn btn--ghost" disabled>
+                <i class="fas fa-clock"></i> Not eligible
+              </button>`
+        }
       </div>
 
       <div class="wallet-metrics">
@@ -959,8 +939,7 @@ async function renderWallets() {
   const container = $("walletsContainer");
   if (!container) return;
 
-  // If no wallets saved
-  if (!wallets || wallets.length === 0) {
+  if (!wallets.length) {
     container.innerHTML = `
       <div style="padding:16px; color:rgba(255,255,255,0.55); text-align:center;">
         No watched wallets yet.
@@ -971,42 +950,9 @@ async function renderWallets() {
   let html = "";
 
   for (const w of wallets) {
-    let eligibility = null;
-    let boostStatus = null;
+    const eligibility = await getWalletEligibility(w.address);
+    if (!eligibility) continue;
 
-    try {
-      [eligibility, boostStatus] = await Promise.all([
-        getWalletEligibility(w.address),
-        getBoostStatus(w.address)
-      ]);
-    } catch (e) {
-      console.warn("Wallet fetch error:", w.address, e);
-    }
-
-    // fallback if RPC fails
-    if (!eligibility) {
-      html += `
-        <div class="wallet-card">
-          <div class="wallet-top">
-            <div class="wallet-id">
-              <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
-              <div class="wallet-addr mono">${escapeHtml(w.address)}</div>
-            </div>
-          </div>
-          <div style="padding:12px; color:rgba(255,255,255,0.5);">
-            RPC busy — retrying...
-          </div>
-        </div>
-      `;
-      continue;
-    }
-
-    const nftBadgeMap = {
-      COMMON: `<span class="nft-badge nft-common">C</span>`,
-      RARE: `<span class="nft-badge nft-rare">R</span>`
-    };
-
-    const nftBadge = nftBadgeMap[boostStatus] || "";
 
     const holdText =
       !eligibility.hasMinBalance
@@ -1023,8 +969,10 @@ async function renderWallets() {
     html += `
       <div class="wallet-card">
         <div class="wallet-top">
-
           <div class="wallet-id">
+            <div class="wallet-mark">
+              ${escapeHtml(w.name.charAt(0).toUpperCase())}
+            </div>
             <div style="min-width:0;">
               <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
               <div class="wallet-addr mono">
@@ -1038,27 +986,11 @@ async function renderWallets() {
             </div>
           </div>
 
-          <div class="wallet-status">
-            ${nftBadge}
-            ${
-              eligibility.canClaim
-                ? `
-                  <button class="btn btn--secondary btn--small"
-                          onclick="claimRewards('${w.address}')">
-                    Claim
-                  </button>`
-                : `
-                  <button class="btn btn--ghost btn--small" disabled>
-                    Not eligible
-                  </button>`
-            }
-            <button class="icon-btn"
-                    onclick="removeWallet('${w.id}')"
-                    title="Remove">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-
+          <button class="icon-btn"
+                  onclick="removeWallet('${w.id}')"
+                  title="Remove">
+            <i class="fas fa-trash"></i>
+          </button>
         </div>
 
         <div class="wallet-metrics">
@@ -1082,6 +1014,21 @@ async function renderWallets() {
             <span class="v mono">${cooldownText}</span>
           </div>
         </div>
+
+        ${
+          eligibility.canClaim
+            ? `
+        <button class="btn btn--secondary btn--block"
+                onclick="claimRewards('${w.address}')">
+          <i class="fas fa-hand-holding-dollar"></i>
+          Claim Rewards
+        </button>`
+            : `
+        <button class="btn btn--ghost btn--block" disabled>
+          <i class="fas fa-clock"></i>
+          Not eligible yet
+        </button>`
+        }
       </div>
     `;
   }
@@ -1169,12 +1116,6 @@ function renderActions() {
           ? escapeHtml(a.amountMmm || "—") // amount sold
           : escapeHtml(a.amountMmm || "—");
 
-      const statusCls = (a.status || "").toLowerCase() === "completed"
-        ? "badge badge--good"
-        : (a.status || "").toLowerCase() === "pending"
-          ? "badge badge--warn"
-          : "badge badge--neutral";
-
       return `
         <tr>
           <td><span class="${badgeCls}">${escapeHtml(a.type)}</span></td>
@@ -1182,7 +1123,7 @@ function renderActions() {
           <td class="mono">${mmmCell}</td>
           <td class="mono">${escapeHtml(a.quote || "—")}</td>
           <td>${explorerLink}</td>
-          <td><span class="${statusCls}">${escapeHtml(a.status || "Pending")}</span></td>
+          <td><span class="badge badge--good">${escapeHtml(a.status || "Pending")}</span></td>
           <td class="mono">${escapeHtml(a.dateTime || "—")}</td>
         </tr>
       `;
@@ -1747,15 +1688,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const poolLink = $("poolLink");
 
   if (mmmLink) {
-    mmmLink.textContent = shortAddr(CONFIG.mmmToken);
-    mmmLink.title = CONFIG.mmmToken;
+    mmmLink.textContent = CONFIG.mmmToken;
     mmmLink.href = `${CONFIG.explorerBase}/address/${CONFIG.mmmToken}`;
   }
 
   const trackerLink = $("trackerLink");
   if (trackerLink) {
-    trackerLink.textContent = shortAddr(CONFIG.tracker);
-    trackerLink.title = CONFIG.tracker;
+    trackerLink.textContent = CONFIG.tracker;
     trackerLink.href = `${CONFIG.explorerBase}/address/${CONFIG.tracker}`;
   }
 
@@ -1775,8 +1714,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await initReadSide();
 
   if (poolLink && pairAddress) {
-    poolLink.textContent = shortAddr(pairAddress);
-    poolLink.title = pairAddress;
+    poolLink.textContent = pairAddress;
     poolLink.href = `${CONFIG.explorerBase}/address/${pairAddress}`;
   }
 
