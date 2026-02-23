@@ -538,6 +538,8 @@ async function getWalletEligibility(addr) {
       const holdRemainingRaw =
         await rewardVault.holdRemaining(addr);
 
+      console.log("holdRemainingRaw:", holdRemainingRaw.toString())  
+
      holdRemaining = Number(holdRemainingRaw);
     }
 
@@ -579,7 +581,7 @@ async function getWalletEligibility(addr) {
     return null;
   }
 
-  console.log("holdRemainingRaw:", holdRemainingRaw.toString())
+  
 }
 
 /* =========================
