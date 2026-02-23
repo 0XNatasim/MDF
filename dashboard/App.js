@@ -16,7 +16,7 @@ const CONFIG = {
   chainIdHex: "0x279F",
   chainName: "Monad Testnet",
   nativeSymbol: "MON",
-  rpcUrls: ["https://testnet-rpc.monad.xyz","https://rpc.ankr.com/monad_testnet","https://rpc-testnet.monadinfra.com"],
+  rpcUrls: ["https://testnet-rpc.monad.xyz","https://rpc.ankr.com/monad_testnet"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
   mmmToken: "0x0705c27638Fc64ccF336e6978292aaaF8784019f",
@@ -79,6 +79,9 @@ const REWARD_VAULT_ABI = [
   "function claimCooldown() view returns (uint256)",
   "function minBalance() view returns (uint256)",
   "function claim()",
+  "function holdRemaining(address) view returns (uint256)",
+  "function cooldownRemaining(address) view returns (uint256)",
+
 ];
 
 const BOOSTNFT_ABI = [
@@ -536,7 +539,7 @@ async function getWalletEligibility(addr) {
 
     if (bal >= minBalance) {
       const holdRemainingRaw =
-        await rewardVault.holdRemaining(addr);
+        await rewardVaultRead.holdRemaining(addr);
 
       console.log("holdRemainingRaw:", holdRemainingRaw.toString())  
 
@@ -550,7 +553,7 @@ async function getWalletEligibility(addr) {
 
     if (bal >= minBalance) {
       const cooldownRaw =
-        await rewardVault.cooldownRemaining(addr);
+        await rewardVaultRead.cooldownRemaining(addr);
 
       cooldownRemaining = Number(cooldownRaw);
     }
