@@ -19,14 +19,14 @@ const CONFIG = {
   rpcUrls: ["https://testnet-rpc.monad.xyz","https://rpc.ankr.com/monad_testnet","https://rpc-testnet.monadinfra.com"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
-  mmmToken: "0xB05fEDD96fCd9DAC11082883823C18656D8efd11",
-  rewardVault: "0x4d5c39a5270E2Dd37C89008E368A15894F6CA89D",
-  taxVault: "0x077531da7E89f6E7C9ADc23a88115ADdC143B8D5",
-  router: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
-  pair: "0xB1CD16f4BA14FC584E2a55AEA9c408CE3Abd3a02",
-  wmon: "0x8673a8605b3e96123e788ce41E8F269179Bff067",
-  tracker: "0x13030b81b4874c7b4C3dF8EaA28A856fd1EfD2af",
-  boostNFT: "0x213811B94bD180627B43EC4a54e4a6e5D510980d",
+  mmmToken: "0xd35cDFCA9D79F8061C03b82e93e7596Ca153DFcb",
+  rewardVault: "0x533100FBfce326e251fa0Bf6ae94F607aE45B560",
+  taxVault: "0xD3B1f2e0af5A13B2fEB2524128933BAA28C1b3f1",
+  router: "0x91fC89382137A902CfeFCC4f55A4DD9D7e31E5f4",
+  pair: "0x2A88e11b99395ed3AAd43C7620e705D85885e0d0",
+  wmon: "0x9A2D7B3A6A2f2179d8C5793bc85569815f18d019",
+  tracker: "0x91fC89382137A902CfeFCC4f55A4DD9D7e31E5f4",
+  boostNFT: "0x1CA299755463C3F7C5e3175332941Fc7c4C65449",
 
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
@@ -972,7 +972,8 @@ async function renderWallets() {
           <div class="wallet-top">
             <div class="wallet-id">
               <div style="min-width:0;">
-                <h3 class="wallet-name">${escapeHtml(w.name)}</h3>
+                <h3 class="wallet-name">
+                  ${escapeHtml(w.name)} ${nftBadge}</h3>
                 <div class="wallet-addr mono">
                   ${escapeHtml(w.address)}
                 </div>
@@ -990,6 +991,15 @@ async function renderWallets() {
       `;
       continue;
     }
+
+    const nftBadgeMap = {
+      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+    };
+    
+    const nftBadge = nftBadgeMap[boostStatus] || "";
+
+
 
 
     const holdText =

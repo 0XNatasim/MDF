@@ -129,7 +129,7 @@ async function main() {
   const rewardVault = await RewardVault.deploy(
     MMM_ADDR,
     60 * 60,   /* 7 * 24 * 3600 */
-    15 * 60,   /* 24 * 3600 */
+    60 * 60,   /* 24 * 3600 */
     ethers.parseUnits("1000", 18),
     deployer.address
   );
