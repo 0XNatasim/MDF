@@ -578,6 +578,8 @@ async function getWalletEligibility(addr) {
     
     return null;
   }
+
+  console.log("holdRemainingRaw:", holdRemainingRaw.toString())
 }
 
 /* =========================
