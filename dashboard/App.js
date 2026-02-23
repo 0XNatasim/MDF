@@ -516,7 +516,6 @@ async function getWalletEligibility(addr) {
       tokenRead.balanceOf(addr),
       rewardVaultRead.pending(addr),
       rewardVaultRead.lastClaimAt(addr),
-      tokenRead.lastNonZeroAt(addr),
     ]);
 
     const bal = Number(
@@ -530,19 +529,16 @@ async function getWalletEligibility(addr) {
     const minBalance = VAULT_PARAMS.minBalance;
 
     /* -------------------------
-       HOLD (only before first claim)
+     HOLD (on-chain truth)
     -------------------------- */
+
     let holdRemaining = 0;
 
-    if (
-      bal >= minBalance &&
-      lastClaimAt === 0n &&
-      lastNonZeroAt > 0n
-    ) {
-      const holdEnd =
-        Number(lastNonZeroAt) + VAULT_PARAMS.minHoldTime;
+    if (bal >= minBalance) {
+      const holdRemainingRaw =
+        await rewardVault.holdRemaining(addr);
 
-      holdRemaining = Math.max(0, holdEnd - nowTs);
+     holdRemaining = Number(holdRemainingRaw);
     }
 
     /* -------------------------
@@ -550,11 +546,11 @@ async function getWalletEligibility(addr) {
     -------------------------- */
     let cooldownRemaining = 0;
 
-    if (lastClaimAt > 0n) {
-      const cooldownEnd =
-        Number(lastClaimAt) + VAULT_PARAMS.claimCooldown;
+    if (bal >= minBalance) {
+      const cooldownRaw =
+        await rewardVault.cooldownRemaining(addr);
 
-      cooldownRemaining = Math.max(0, cooldownEnd - nowTs);
+      cooldownRemaining = Number(cooldownRaw);
     }
 
     const canClaim =
