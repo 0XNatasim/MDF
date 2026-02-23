@@ -965,7 +965,15 @@ async function renderWallets() {
       getWalletEligibility(w.address),
       getBoostStatus(w.address),
     ]);
-  
+
+    const nftBadgeMap = {
+      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
+      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
+    };
+    
+    const nftBadge = nftBadgeMap[boostStatus] || "";
+
+
     if (!eligibility) {
       html += `
         <div class="wallet-card">
@@ -992,12 +1000,7 @@ async function renderWallets() {
       continue;
     }
 
-    const nftBadgeMap = {
-      COMMON: `<span class="nft-badge nft-common" title="Common Boost NFT">C</span>`,
-      RARE: `<span class="nft-badge nft-rare" title="Rare Boost NFT">R</span>`
-    };
-    
-    const nftBadge = nftBadgeMap[boostStatus] || "";
+
 
 
 
