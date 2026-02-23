@@ -19,14 +19,14 @@ const CONFIG = {
   rpcUrls: ["https://testnet-rpc.monad.xyz","https://rpc.ankr.com/monad_testnet","https://rpc-testnet.monadinfra.com"],
   explorerBase: "https://testnet.monadvision.com",
   // === CONTRACTS (MONAD TESTNET) ===
-  mmmToken: "0xd35cDFCA9D79F8061C03b82e93e7596Ca153DFcb",
-  rewardVault: "0x533100FBfce326e251fa0Bf6ae94F607aE45B560",
-  taxVault: "0xD3B1f2e0af5A13B2fEB2524128933BAA28C1b3f1",
-  router: "0x91fC89382137A902CfeFCC4f55A4DD9D7e31E5f4",
-  pair: "0x2A88e11b99395ed3AAd43C7620e705D85885e0d0",
-  wmon: "0x9A2D7B3A6A2f2179d8C5793bc85569815f18d019",
-  tracker: "0x91fC89382137A902CfeFCC4f55A4DD9D7e31E5f4",
-  boostNFT: "0x1CA299755463C3F7C5e3175332941Fc7c4C65449",
+  mmmToken: "0x0705c27638Fc64ccF336e6978292aaaF8784019f",
+  rewardVault: "0x43d0D9EBaa8B4Db9e4D774967448Ee4fd24E5391",
+  taxVault: "0xDa9Bb0673d1Bc44F6b7e44748a7a614ac819C238",
+  router: "0x8f19BA1736bEe66b59628F73bB040150ec912E51",
+  pair: "0xfc1714625A7e0CC80AcDA84038DFE7A3214f26b7",
+  wmon: "0xBfcE67C05ba97a627b911Ba27B56A3037260C185",
+  tracker: "0x8f19BA1736bEe66b59628F73bB040150ec912E51",
+  boostNFT: "0xC792E95519ce5F9EBC7b52F0A57f34D659CeA1Ae",
 
 
   defaultWatch: ["0x3d0de3A76cd9f856664DC5a3adfd4056E45da9ED"],
