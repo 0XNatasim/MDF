@@ -144,6 +144,34 @@ contract RewardVault is Ownable, ReentrancyGuard {
         return accrued - debt;
     }
 
+    function holdRemaining(address user) external view returns (uint256) {
+        if (mmm.balanceOf(user) < minBalance) return 0;
+
+        if (lastClaimAt[user] != 0) return 0;
+
+        uint256 effectiveHold = minHoldTimeSec;
+
+        if (address(boostNFT) != address(0)) {
+            try boostNFT.getBoost(user)
+                returns (IBoostNFT.BoostConfig memory cfg, uint8)
+            {
+                if (cfg.holdReduction >= effectiveHold)
+                    effectiveHold = 0;
+                else
+                    effectiveHold -= cfg.holdReduction;
+            } catch {}
+        }
+
+        uint256 unlockTime =
+            mmm.lastNonZeroAt(user) + effectiveHold;
+
+        if (block.timestamp >= unlockTime) return 0;
+
+        return unlockTime - block.timestamp;
+    }
+
+
+
     /*//////////////////////////////////////////////////////////////
                             ADMIN
     //////////////////////////////////////////////////////////////*/
