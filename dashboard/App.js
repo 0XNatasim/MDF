@@ -576,10 +576,11 @@ async function getWalletEligibility(addr) {
       lastNonZeroAt: Number(lastNonZeroAt),
     };
 
-    catch (e) {
-      console.error("ELIGIBILITY ERROR:", addr, e);
-      throw e;   // ← temporarily remove fail-soft
-    }
+  } catch (e) {
+    console.error("ELIGIBILITY ERROR:", addr, e);
+    throw e;   // ← temporarily remove fail-soft
+  }
+    
 
   
 }
