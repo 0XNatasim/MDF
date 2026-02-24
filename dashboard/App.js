@@ -539,12 +539,18 @@ async function getWalletEligibility(addr) {
     let holdRemaining = 0;
 
     if (bal >= minBalance) {
-      const holdRemainingRaw =
-        await rewardVaultRead.holdRemaining(addr);
+      try {
+        const holdRemainingRaw =
+          await rewardVaultRead.holdRemaining(addr);
 
-      console.log("holdRemainingRaw:", holdRemainingRaw.toString())  
+        console.log("holdRemainingRaw:", holdRemainingRaw.toString())
 
-     holdRemaining = Number(holdRemainingRaw);
+        holdRemaining = Number(holdRemainingRaw);
+      } catch (e) {
+        // Contract reverts for non-eligible wallets — treat as zero
+        console.warn("holdRemaining() reverted, defaulting to 0:", e.message);
+        holdRemaining = 0;
+      }
     }
 
     /* -------------------------
@@ -553,10 +559,16 @@ async function getWalletEligibility(addr) {
     let cooldownRemaining = 0;
 
     if (bal >= minBalance) {
-      const cooldownRaw =
-        await rewardVaultRead.cooldownRemaining(addr);
+      try {
+        const cooldownRaw =
+          await rewardVaultRead.cooldownRemaining(addr);
 
-      cooldownRemaining = Number(cooldownRaw);
+        cooldownRemaining = Number(cooldownRaw);
+      } catch (e) {
+        // Contract reverts for non-eligible wallets — treat as zero
+        console.warn("cooldownRemaining() reverted, defaulting to 0:", e.message);
+        cooldownRemaining = 0;
+      }
     }
 
     const canClaim =
@@ -578,7 +590,16 @@ async function getWalletEligibility(addr) {
 
   } catch (e) {
     console.error("ELIGIBILITY ERROR:", addr, e);
-    throw e;   // ← temporarily remove fail-soft
+    return {
+      bal: 0n,
+      pending: 0,
+      holdRemaining: 0,
+      cooldownRemaining: 0,
+      canClaim: false,
+      hasMinBalance: false,
+      lastClaimAt: 0,
+      lastNonZeroAt: 0,
+    };
   }
     
 
