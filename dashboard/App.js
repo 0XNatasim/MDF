@@ -576,14 +576,10 @@ async function getWalletEligibility(addr) {
       lastNonZeroAt: Number(lastNonZeroAt),
     };
 
-  } catch (e) {
-    // IMPORTANT: fail-soft, do NOT lie with zeros
-    if (!String(e.message).includes("Too Many Requests")) {
-      console.warn("[getWalletEligibility skipped]", addr, e.message);
+    catch (e) {
+      console.error("ELIGIBILITY ERROR:", addr, e);
+      throw e;   // ← temporarily remove fail-soft
     }
-    
-    return null;
-  }
 
   
 }
