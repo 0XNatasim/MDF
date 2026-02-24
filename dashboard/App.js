@@ -519,6 +519,7 @@ async function getWalletEligibility(addr) {
       tokenRead.balanceOf(addr),
       rewardVaultRead.pending(addr),
       rewardVaultRead.lastClaimAt(addr),
+      tokenRead.lastNonZeroAt(addr),   // ← THIS WAS MISSING
     ]);
 
     const bal = Number(
